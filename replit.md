@@ -130,10 +130,25 @@ Esto levanta todos los servicios en paralelo:
 ✅ Logging detallado en cada paso
 ✅ Gestión de errores robusta
 
+## Frontend de Testing (Estado Actual)
+
+✅ UI básica implementada en `gateway/static/`:
+- Service Status: Monitoreo visual del estado de cada microservicio
+- Test Panel: Botones para probar login de Spotify y obtener recomendaciones
+- Progress Tracker: Visualización de pasos (actualmente simulado)
+- Results View: Cards con álbumes recomendados, precios en EUR, y links a Discogs
+
+⚠️ Limitaciones actuales:
+- Progress tracking es simulado (no usa SSE real)
+- No hay consola de logs en tiempo real
+- Requiere credenciales de Spotify configuradas para funcionar
+
 ## Próximas Mejoras
 
-- [ ] Frontend con UI de testing y monitoreo
-- [ ] Server-Sent Events (SSE) para logs en tiempo real
+- [ ] Server-Sent Events (SSE) para logs en tiempo real desde cada servicio
+- [ ] Progress reporting real usando SSE del gateway
+- [ ] Consola de logs con filtros por servicio y nivel
+- [ ] Conversión de monedas completa para todas las divisas de Discogs
 - [ ] Cache para peticiones a Discogs (rate limiting)
 - [ ] Concurrencia en enrichment de álbumes (paralelo vs secuencial)
 - [ ] Persistencia de tokens de Spotify en base de datos
