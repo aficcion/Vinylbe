@@ -255,6 +255,15 @@ async def enrich_album_with_discogs(album: dict, idx: int, total: int, semaphore
             if not selected_release:
                 selected_release = vinyl_releases[0]
                 release_id = selected_release.get("id")
+                
+                # Set debug info for fallback selection
+                debug_info["details"]["selected_release_index"] = 1
+                format_value = selected_release.get("format", "")
+                if isinstance(format_value, list):
+                    debug_info["details"]["selected_format"] = " ".join(format_value)
+                else:
+                    debug_info["details"]["selected_format"] = str(format_value)
+                
                 try:
                     stats_resp = await http_client.get(
                         f"{DISCOGS_SERVICE_URL}/stats/{release_id}"

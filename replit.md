@@ -50,9 +50,11 @@ Sistema completo de recomendación de vinilos basado en tus gustos musicales de 
    - Aplica boosts por período y artistas favoritos
 7. Para cada álbum recomendado:
    - Gateway busca en Discogs → Discogs Service
-   - **Filtrado inteligente**: De todas las releases, elige LP estándar (evita Box Sets/Compilaciones)
-   - Prefiere ediciones originales sobre reissues/remasters cuando sea posible
-   - Obtiene stats y precios del mejor candidato (convertidos a EUR)
+   - **Búsqueda inteligente multi-release**: Prueba hasta 5 releases para encontrar precio
+   - Ordena por preferencia: ediciones originales primero, luego reissues/remasters
+   - Itera probando stats de cada release hasta encontrar uno con precio disponible
+   - Si ninguno tiene precio después de 5 intentos, usa el primero como fallback
+   - Convierte precios a EUR (convertidos a EUR)
 8. Retorna lista ordenada de álbumes con info de Spotify + Discogs
 ```
 
@@ -128,9 +130,10 @@ Esto levanta todos los servicios en paralelo:
 ✅ Boost adicional para artistas favoritos (5x)
 ✅ Filtrado de álbumes (mínimo 5 tracks)
 ✅ Integración con Discogs para datos de vinilos
-✅ **Filtrado inteligente de releases** (prefiere LP estándar, evita Box Sets)
+✅ **Búsqueda multi-release inteligente** (prueba hasta 5 releases para encontrar precio)
+✅ **Permite todos los formatos** (Box Sets, Compilaciones, etc.) - prioriza originales
 ✅ Conversión automática de precios a EUR con tasas actuales (Nov 2025)
-✅ **Procesamiento paralelo de TODOS los álbumes (concurrencia controlada con Semaphore)**
+✅ **Procesamiento secuencial de TODOS los álbumes (rate limit 2s para evitar 429s)**
 ✅ **Tracking de tiempo total de procesamiento**
 ✅ **Breakdown detallado de scoring por álbum** (base score + periodo + boost)
 ✅ Health checks en todos los servicios
@@ -151,12 +154,17 @@ Esto levanta todos los servicios en paralelo:
   - Distribución por período temporal (short/medium/long term)
   - Número de tracks por período
 - **Discogs Debug Info**: Información visual del estado de búsqueda de Discogs para cada álbum
-  - ✓ Success (verde): LP disponible con precio
-  - ⚠ No Price (amarillo): LP encontrado pero sin precio
-  - ○ Filtered (naranja): Solo formatos excluidos (Box Sets, Compilaciones, etc.)
+  - ✓ Success (verde): Vinilo disponible con precio
+  - ⚠ No Price (amarillo): Probados múltiples releases, ninguno con precio
   - ✗ Not Found (gris): No encontrado en Discogs
   - ! Error (rojo): Error en la búsqueda
-  - Detalles técnicos expandibles: releases encontrados, LPs válidos, formatos excluidos
+  - Detalles técnicos expandibles: 
+    - Releases en Discogs (total encontrados)
+    - Vinilos válidos (que tienen formato LP/Vinyl)
+    - **Probados** (cuántos se intentaron, máx 5)
+    - Con precio (cuántos tenían precio disponible)
+    - Seleccionado (índice del release elegido)
+    - Formato del vinilo seleccionado
 
 ⚠️ Limitaciones actuales:
 - Progress tracking es simulado (no usa SSE real)
@@ -177,9 +185,11 @@ Esto levanta todos los servicios en paralelo:
 ## Última Actualización
 10 de noviembre de 2025 - Sistema completamente funcional con:
 - Procesamiento secuencial de todos los álbumes (rate limit 2s para evitar 429s)
-- **Filtrado inteligente de releases**: Prefiere LP estándar, evita Box Sets/Compilaciones
+- **Búsqueda multi-release inteligente**: Prueba hasta 5 releases por álbum para encontrar precio
+- **Permite todos los formatos**: Box Sets, Compilaciones, etc. (ordena por preferencia)
 - **Tasas de conversión EUR actualizadas** (Nov 2025): USD 0.865, GBP 1.140, JPY 0.00573
 - Tracking de tiempo total de procesamiento
 - Breakdown detallado de scoring visible en UI
+- Debug info detallado: releases probados, índice seleccionado, formato
 - Sin límites artificiales en cantidad de álbumes procesados
 - Conversión de precios robusta (maneja casos sin precio disponible)
