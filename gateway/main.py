@@ -121,7 +121,12 @@ def filter_best_release(releases: list) -> dict | None:
     
     lp_releases = []
     for release in releases:
-        format_str = release.get("format", "").lower()
+        format_value = release.get("format", "")
+        
+        if isinstance(format_value, list):
+            format_str = " ".join(format_value).lower()
+        else:
+            format_str = str(format_value).lower()
         
         is_excluded = any(excl.lower() in format_str for excl in excluded_formats)
         if is_excluded:
@@ -132,10 +137,16 @@ def filter_best_release(releases: list) -> dict | None:
             lp_releases.append(release)
     
     if not lp_releases:
-        return releases[0]
+        return None
     
     for release in lp_releases:
-        if "reissue" in release.get("format", "").lower() or "remaster" in release.get("format", "").lower():
+        format_value = release.get("format", "")
+        if isinstance(format_value, list):
+            format_str = " ".join(format_value).lower()
+        else:
+            format_str = str(format_value).lower()
+            
+        if "reissue" in format_str or "remaster" in format_str:
             continue
         return release
     
