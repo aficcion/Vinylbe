@@ -121,15 +121,16 @@ class DiscogsClient:
             }
     
     async def convert_to_eur(self, price: float, from_currency: str) -> float:
+        """Convert price from source currency to EUR using current exchange rates (Nov 2025)"""
         if from_currency == "EUR":
             return price
         
         conversion_rates = {
-            "USD": 0.92,
-            "GBP": 1.17,
-            "JPY": 0.0062,
-            "CAD": 0.67,
-            "AUD": 0.60,
+            "USD": 0.865,
+            "GBP": 1.140,
+            "JPY": 0.00573,
+            "CAD": 0.617,
+            "AUD": 0.562,
         }
         
         rate = conversion_rates.get(from_currency, 1.0)

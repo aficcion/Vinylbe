@@ -111,6 +111,37 @@ async def spotify_callback_alias(code: str):
     return await spotify_callback(code)
 
 
+def filter_best_release(releases: list) -> dict | None:
+    """Filter releases to find the best LP to buy based on format and availability"""
+    if not releases:
+        return None
+    
+    preferred_formats = ["LP", "Album", "Vinyl"]
+    excluded_formats = ["Box Set", "Compilation", "Single", "EP", "CD"]
+    
+    lp_releases = []
+    for release in releases:
+        format_str = release.get("format", "").lower()
+        
+        is_excluded = any(excl.lower() in format_str for excl in excluded_formats)
+        if is_excluded:
+            continue
+        
+        is_lp = any(pref.lower() in format_str for pref in preferred_formats)
+        if is_lp:
+            lp_releases.append(release)
+    
+    if not lp_releases:
+        return releases[0]
+    
+    for release in lp_releases:
+        if "reissue" in release.get("format", "").lower() or "remaster" in release.get("format", "").lower():
+            continue
+        return release
+    
+    return lp_releases[0]
+
+
 async def enrich_album_with_discogs(album: dict, idx: int, total: int, semaphore: asyncio.Semaphore) -> dict:
     """Enrich a single album with Discogs data using controlled concurrency"""
     async with semaphore:
@@ -128,7 +159,13 @@ async def enrich_album_with_discogs(album: dict, idx: int, total: int, semaphore
             search_results = search_resp.json().get("results", [])
             
             if search_results:
-                release = search_results[0]
+                release = filter_best_release(search_results)
+                if not release:
+                    album["discogs_release"] = None
+                    album["discogs_stats"] = None
+                    log_event("gateway", "INFO", f"[{idx}/{total}] ○ No suitable vinyl format found: {album_name}")
+                    return album
+                
                 release_id = release.get("id")
                 
                 stats_resp = await http_client.get(
