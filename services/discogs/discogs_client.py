@@ -64,10 +64,22 @@ class DiscogsClient:
             
             sell_list_url = f"https://www.discogs.com/sell/list?format=Vinyl&release_id={release_id}"
             
+            lowest_price_data = data.get("lowest_price", {})
+            source_price = lowest_price_data.get("value")
+            source_currency = lowest_price_data.get("currency", "EUR")
+            
+            if source_price is not None and source_currency != "EUR":
+                price_in_eur = await self.convert_to_eur(source_price, source_currency)
+                log_event("discogs-client", "INFO", f"Converted {source_price} {source_currency} to {price_in_eur:.2f} EUR")
+            else:
+                price_in_eur = source_price
+            
             return {
                 "release_id": release_id,
-                "lowest_price": data.get("lowest_price", {}).get("value"),
-                "currency": data.get("lowest_price", {}).get("currency", currency),
+                "lowest_price": price_in_eur,
+                "currency": "EUR",
+                "original_price": source_price,
+                "original_currency": source_currency,
                 "num_for_sale": data.get("num_for_sale", 0),
                 "sell_list_url": sell_list_url,
             }
@@ -76,7 +88,9 @@ class DiscogsClient:
             return {
                 "release_id": release_id,
                 "lowest_price": None,
-                "currency": currency,
+                "currency": "EUR",
+                "original_price": None,
+                "original_currency": None,
                 "num_for_sale": 0,
                 "sell_list_url": f"https://www.discogs.com/sell/list?format=Vinyl&release_id={release_id}",
             }

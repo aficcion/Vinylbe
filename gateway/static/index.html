@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vinyl Recommendation System - Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-4xl font-bold mb-8 text-gray-800">🎵 Vinyl Recommendation System</h1>
+        
+        <!-- Service Status -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h2 class="text-2xl font-semibold mb-4">Service Status</h2>
+            <div id="service-status" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div class="text-center">
+                    <div class="text-sm text-gray-600">Gateway</div>
+                    <div id="status-gateway" class="mt-2">
+                        <span class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                        <span class="ml-2 text-sm">Checking...</span>
+                    </div>
+                </div>
+                <div class="text-center">
+                    <div class="text-sm text-gray-600">Spotify Service</div>
+                    <div id="status-spotify" class="mt-2">
+                        <span class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                        <span class="ml-2 text-sm">Checking...</span>
+                    </div>
+                </div>
+                <div class="text-center">
+                    <div class="text-sm text-gray-600">Discogs Service</div>
+                    <div id="status-discogs" class="mt-2">
+                        <span class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                        <span class="ml-2 text-sm">Checking...</span>
+                    </div>
+                </div>
+                <div class="text-center">
+                    <div class="text-sm text-gray-600">Recommender</div>
+                    <div id="status-recommender" class="mt-2">
+                        <span class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
+                        <span class="ml-2 text-sm">Checking...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Test Panel -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h2 class="text-2xl font-semibold mb-4">Test Panel</h2>
+            <div class="space-y-4">
+                <div>
+                    <button onclick="testSpotifyLogin()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                        🔐 Login with Spotify
+                    </button>
+                    <span id="spotify-login-result" class="ml-4 text-sm"></span>
+                </div>
+                <div>
+                    <button onclick="testRecommendation()" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
+                        🎧 Get Vinyl Recommendations
+                    </button>
+                    <span id="recommend-result" class="ml-4 text-sm"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progress Tracker -->
+        <div id="progress-tracker" class="bg-white rounded-lg shadow-md p-6 mb-8 hidden">
+            <h2 class="text-2xl font-semibold mb-4">Recommendation Progress</h2>
+            <div class="space-y-3">
+                <div id="step-1" class="flex items-center">
+                    <span class="inline-block w-6 h-6 rounded-full bg-gray-300 mr-3"></span>
+                    <span>Fetching top tracks from Spotify...</span>
+                </div>
+                <div id="step-2" class="flex items-center">
+                    <span class="inline-block w-6 h-6 rounded-full bg-gray-300 mr-3"></span>
+                    <span>Fetching top artists from Spotify...</span>
+                </div>
+                <div id="step-3" class="flex items-center">
+                    <span class="inline-block w-6 h-6 rounded-full bg-gray-300 mr-3"></span>
+                    <span>Scoring tracks...</span>
+                </div>
+                <div id="step-4" class="flex items-center">
+                    <span class="inline-block w-6 h-6 rounded-full bg-gray-300 mr-3"></span>
+                    <span>Scoring artists...</span>
+                </div>
+                <div id="step-5" class="flex items-center">
+                    <span class="inline-block w-6 h-6 rounded-full bg-gray-300 mr-3"></span>
+                    <span>Aggregating and filtering albums...</span>
+                </div>
+                <div id="step-6" class="flex items-center">
+                    <span class="inline-block w-6 h-6 rounded-full bg-gray-300 mr-3"></span>
+                    <span>Enriching with Discogs data...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results -->
+        <div id="results-container" class="hidden">
+            <h2 class="text-2xl font-semibold mb-4">Recommended Albums</h2>
+            <div id="results" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

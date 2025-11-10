@@ -40,10 +40,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount static files
+static_path = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=static_path), name="static")
+
 
 @app.get("/")
 async def root():
-    return {"status": "ok", "message": "Vinyl Recommendation API Gateway 🎵"}
+    return FileResponse(static_path / "index.html")
 
 
 @app.get("/health")
