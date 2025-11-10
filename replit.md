@@ -122,21 +122,30 @@ Esto levanta todos los servicios en paralelo:
 ✅ Arquitectura de 4 microservicios independientes
 ✅ Obtención de 300 tracks y 300 artistas de Spotify
 ✅ Sistema de puntuación con boosts por período temporal
-✅ Boost adicional para artistas favoritos
+✅ Boost adicional para artistas favoritos (5x)
 ✅ Filtrado de álbumes (mínimo 5 tracks)
 ✅ Integración con Discogs para datos de vinilos
 ✅ Conversión automática de precios a EUR
+✅ **Procesamiento paralelo de TODOS los álbumes (concurrencia controlada con Semaphore)**
+✅ **Tracking de tiempo total de procesamiento**
+✅ **Breakdown detallado de scoring por álbum** (base score + periodo + boost)
 ✅ Health checks en todos los servicios
 ✅ Logging detallado en cada paso
 ✅ Gestión de errores robusta
 
 ## Frontend de Testing (Estado Actual)
 
-✅ UI básica implementada en `gateway/static/`:
+✅ UI completa implementada en `gateway/static/`:
 - Service Status: Monitoreo visual del estado de cada microservicio
 - Test Panel: Botones para probar login de Spotify y obtener recomendaciones
 - Progress Tracker: Visualización de pasos (actualmente simulado)
 - Results View: Cards con álbumes recomendados, precios en EUR, y links a Discogs
+- **Total Time Display**: Muestra el tiempo total de procesamiento
+- **Score Breakdown**: Desglose detallado de puntuación para cada álbum
+  - Base score (suma de tracks)
+  - Boost de artista favorito (si aplica)
+  - Distribución por período temporal (short/medium/long term)
+  - Número de tracks por período
 
 ⚠️ Limitaciones actuales:
 - Progress tracking es simulado (no usa SSE real)
@@ -155,4 +164,8 @@ Esto levanta todos los servicios en paralelo:
 - [ ] Métricas y observabilidad (Prometheus/Grafana)
 
 ## Última Actualización
-10 de noviembre de 2025 - Arquitectura de microservicios completamente funcional con conversión a EUR implementada
+10 de noviembre de 2025 - Sistema completamente funcional con:
+- Procesamiento paralelo de todos los álbumes (concurrencia limitada a 3 simultáneos)
+- Tracking de tiempo total
+- Breakdown detallado de scoring visible en UI
+- Sin límites artificiales en cantidad de álbumes procesados
