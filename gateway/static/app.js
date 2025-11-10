@@ -238,15 +238,21 @@ function displayResults(albums, stats, totalTime) {
                     </details>
                     <div class="border-t pt-3 mt-3">
                         ${debugBadgeHtml}
-                        <div class="flex justify-between items-center mb-2">
-                            <span class="text-gray-700">Vinyl Price:</span>
-                            <span class="font-bold text-green-600">${price}</span>
-                        </div>
-                        <div class="flex justify-between items-center mb-3">
-                            <span class="text-gray-700">Available:</span>
-                            <span class="text-gray-900">${forSale} listings</span>
-                        </div>
-                        ${forSale > 0 ? `<a href="${discogsUrl}" target="_blank" class="block w-full text-center bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">View on Discogs</a>` : '<button disabled class="block w-full text-center bg-gray-300 text-gray-600 font-bold py-2 px-4 rounded cursor-not-allowed">Not Available</button>'}
+                        ${debugStatus === 'success' || debugStatus === 'no_price' ? `
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-gray-700">Vinyl Price:</span>
+                                <span class="font-bold text-green-600">${price}</span>
+                            </div>
+                            <div class="flex justify-between items-center mb-3">
+                                <span class="text-gray-700">Available:</span>
+                                <span class="text-gray-900">${forSale} listings</span>
+                            </div>
+                        ` : ''}
+                        ${debugStatus === 'success' && forSale > 0 ? `<a href="${discogsUrl}" target="_blank" class="block w-full text-center bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">View on Discogs</a>` : ''}
+                        ${debugStatus === 'no_price' ? '<div class="text-center text-sm text-gray-500 italic py-2">LP encontrado en Discogs pero sin precio disponible actualmente</div>' : ''}
+                        ${debugStatus === 'filtered' ? '<div class="text-center text-sm text-orange-600 italic py-2">Solo Box Sets/Compilaciones disponibles - no se muestran</div>' : ''}
+                        ${debugStatus === 'not_found' ? '<div class="text-center text-sm text-gray-500 italic py-2">No encontrado en el catálogo de Discogs</div>' : ''}
+                        ${debugStatus === 'error' ? '<div class="text-center text-sm text-red-600 italic py-2">Error al buscar en Discogs</div>' : ''}
                     </div>
                 </div>
             </div>

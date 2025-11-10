@@ -150,6 +150,13 @@ Esto levanta todos los servicios en paralelo:
   - Boost de artista favorito (si aplica)
   - Distribución por período temporal (short/medium/long term)
   - Número de tracks por período
+- **Discogs Debug Info**: Información visual del estado de búsqueda de Discogs para cada álbum
+  - ✓ Success (verde): LP disponible con precio
+  - ⚠ No Price (amarillo): LP encontrado pero sin precio
+  - ○ Filtered (naranja): Solo formatos excluidos (Box Sets, Compilaciones, etc.)
+  - ✗ Not Found (gris): No encontrado en Discogs
+  - ! Error (rojo): Error en la búsqueda
+  - Detalles técnicos expandibles: releases encontrados, LPs válidos, formatos excluidos
 
 ⚠️ Limitaciones actuales:
 - Progress tracking es simulado (no usa SSE real)
