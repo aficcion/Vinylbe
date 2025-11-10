@@ -94,10 +94,10 @@ async function testRecommendation() {
         clearInterval(progressInterval);
         steps.forEach(step => updateStepStatus(step.id, 'completed'));
         
-        resultElement.textContent = `Success! Found ${data.total} albums`;
+        resultElement.textContent = `Success! Found ${data.total} albums in ${data.total_time_seconds}s`;
         resultElement.className = 'ml-4 text-sm text-green-600';
         
-        displayResults(data.albums, data.stats);
+        displayResults(data.albums, data.stats, data.total_time_seconds);
     } catch (error) {
         clearInterval(progressInterval);
         resultElement.textContent = `Error: ${error.message}`;
@@ -127,7 +127,7 @@ function updateStepStatus(stepId, status) {
     circle.className = `inline-block w-6 h-6 rounded-full ${colorMap[status]} mr-3`;
 }
 
-function displayResults(albums, stats) {
+function displayResults(albums, stats, totalTime) {
     const resultsContainer = document.getElementById('results-container');
     const resultsDiv = document.getElementById('results');
     
@@ -150,6 +150,13 @@ function displayResults(albums, stats) {
         const score = album.score ? album.score.toFixed(0) : '0';
         const trackCount = album.track_count || 0;
         
+        const breakdown = album.score_breakdown || {};
+        const baseScore = breakdown.base_score || 0;
+        const artistBoostApplied = breakdown.artist_boost_applied || false;
+        const boostMultiplier = breakdown.artist_boost_multiplier || 1;
+        const scoreByPeriod = breakdown.score_by_period || {};
+        const tracksByPeriod = breakdown.tracks_by_period || {};
+        
         return `
             <div class="bg-white rounded-lg shadow-md overflow-hidden">
                 <img src="${imageUrl}" alt="${albumName}" class="w-full h-48 object-cover">
@@ -160,7 +167,19 @@ function displayResults(albums, stats) {
                         <span class="text-gray-700">${trackCount} tracks</span>
                         <span class="text-purple-600 font-semibold">Score: ${score}</span>
                     </div>
-                    ${album.artist_boost ? '<span class="inline-block bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded mb-2">⭐ Favorite Artist</span>' : ''}
+                    ${artistBoostApplied ? '<span class="inline-block bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded mb-2">⭐ Favorite Artist (${boostMultiplier}x boost)</span>' : ''}
+                    <details class="text-xs text-gray-600 mb-2">
+                        <summary class="cursor-pointer hover:text-purple-600 font-medium">Score Breakdown</summary>
+                        <div class="mt-2 p-2 bg-gray-50 rounded">
+                            <div>Base Score: ${baseScore}</div>
+                            ${artistBoostApplied ? `<div>Artist Boost: ${boostMultiplier}x</div>` : ''}
+                            <div class="mt-1 border-t pt-1">
+                                <div>Short term: ${scoreByPeriod.short_term || 0} (${tracksByPeriod.short_term || 0} tracks, 3x boost)</div>
+                                <div>Medium term: ${scoreByPeriod.medium_term || 0} (${tracksByPeriod.medium_term || 0} tracks, 2x boost)</div>
+                                <div>Long term: ${scoreByPeriod.long_term || 0} (${tracksByPeriod.long_term || 0} tracks, 1x boost)</div>
+                            </div>
+                        </div>
+                    </details>
                     <div class="border-t pt-3 mt-3">
                         <div class="flex justify-between items-center mb-2">
                             <span class="text-gray-700">Vinyl Price:</span>
@@ -177,12 +196,13 @@ function displayResults(albums, stats) {
         `;
     }).join('');
     
-    // Show stats
+    // Show stats with total time
     if (stats) {
         const statsHtml = `
             <div class="col-span-full bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                 <h3 class="font-bold text-lg mb-2">Statistics</h3>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                    <div><span class="text-gray-600">Total Time:</span> <span class="font-semibold text-green-600">${totalTime}s</span></div>
                     <div><span class="text-gray-600">Tracks Analyzed:</span> <span class="font-semibold">${stats.tracks_analyzed || 0}</span></div>
                     <div><span class="text-gray-600">Artists Analyzed:</span> <span class="font-semibold">${stats.artists_analyzed || 0}</span></div>
                     <div><span class="text-gray-600">Albums Found:</span> <span class="font-semibold">${stats.albums_found || 0}</span></div>

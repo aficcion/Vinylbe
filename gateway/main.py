@@ -7,6 +7,8 @@ import os
 import sys
 from pathlib import Path
 import httpx
+import asyncio
+import time
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -109,11 +111,53 @@ async def spotify_callback_alias(code: str):
     return await spotify_callback(code)
 
 
+async def enrich_album_with_discogs(album: dict, idx: int, total: int, semaphore: asyncio.Semaphore) -> dict:
+    """Enrich a single album with Discogs data using controlled concurrency"""
+    async with semaphore:
+        album_info = album.get("album_info", {})
+        artist_name = album_info.get("artists", [{}])[0].get("name", "Unknown")
+        album_name = album_info.get("name", "Unknown")
+        
+        log_event("gateway", "INFO", f"[{idx}/{total}] Processing: {artist_name} - {album_name}")
+        
+        try:
+            search_resp = await http_client.get(
+                f"{DISCOGS_SERVICE_URL}/search",
+                params={"artist": artist_name, "title": album_name}
+            )
+            search_results = search_resp.json().get("results", [])
+            
+            if search_results:
+                release = search_results[0]
+                release_id = release.get("id")
+                
+                stats_resp = await http_client.get(
+                    f"{DISCOGS_SERVICE_URL}/stats/{release_id}"
+                )
+                stats = stats_resp.json()
+                
+                album["discogs_release"] = release
+                album["discogs_stats"] = stats
+                
+                log_event("gateway", "INFO", f"[{idx}/{total}] ✓ Enriched: {album_name}")
+            else:
+                album["discogs_release"] = None
+                album["discogs_stats"] = None
+                log_event("gateway", "INFO", f"[{idx}/{total}] ○ Not found on Discogs: {album_name}")
+        except Exception as e:
+            log_event("gateway", "WARNING", f"[{idx}/{total}] ✗ Failed: {album_name} - {str(e)}")
+            album["discogs_release"] = None
+            album["discogs_stats"] = None
+        
+        return album
+
+
 @app.get("/recommend-vinyl")
 async def recommend_vinyl():
     if not http_client:
         raise HTTPException(status_code=500, detail="HTTP client not initialized")
     
+    start_time = time.time()
     log_event("gateway", "INFO", "Starting vinyl recommendation flow")
     
     try:
@@ -153,53 +197,26 @@ async def recommend_vinyl():
         albums = albums_resp.json().get("albums", [])
         log_event("gateway", "INFO", f"Generated {len(albums)} album recommendations")
         
-        log_event("gateway", "INFO", f"Step 6: Enriching top 20 albums with Discogs data (rate limited, ~45 seconds)")
-        top_albums = albums[:20]
-        enriched_albums = []
+        total_albums = len(albums)
+        log_event("gateway", "INFO", f"Step 6: Enriching ALL {total_albums} albums with Discogs data (concurrent processing)")
         
-        for idx, album in enumerate(top_albums, 1):
-            album_info = album.get("album_info", {})
-            artist_name = album_info.get("artists", [{}])[0].get("name", "Unknown")
-            album_name = album_info.get("name", "Unknown")
-            
-            log_event("gateway", "INFO", f"[{idx}/20] Processing: {artist_name} - {album_name}")
-            
-            try:
-                search_resp = await http_client.get(
-                    f"{DISCOGS_SERVICE_URL}/search",
-                    params={"artist": artist_name, "title": album_name}
-                )
-                search_results = search_resp.json().get("results", [])
-                
-                if search_results:
-                    release = search_results[0]
-                    release_id = release.get("id")
-                    
-                    stats_resp = await http_client.get(
-                        f"{DISCOGS_SERVICE_URL}/stats/{release_id}"
-                    )
-                    stats = stats_resp.json()
-                    
-                    album["discogs_release"] = release
-                    album["discogs_stats"] = stats
-                    
-                    log_event("gateway", "INFO", f"[{idx}/20] ✓ Enriched: {album_name}")
-                else:
-                    album["discogs_release"] = None
-                    album["discogs_stats"] = None
-                    log_event("gateway", "INFO", f"[{idx}/20] ○ Not found on Discogs: {album_name}")
-            except Exception as e:
-                log_event("gateway", "WARNING", f"[{idx}/20] ✗ Failed: {album_name} - {str(e)}")
-                album["discogs_release"] = None
-                album["discogs_stats"] = None
-            
-            enriched_albums.append(album)
+        semaphore = asyncio.Semaphore(3)
         
-        log_event("gateway", "INFO", f"Recommendation flow complete: {len(enriched_albums)} albums")
+        tasks = [
+            enrich_album_with_discogs(album, idx, total_albums, semaphore)
+            for idx, album in enumerate(albums, 1)
+        ]
+        
+        enriched_albums = await asyncio.gather(*tasks)
+        
+        end_time = time.time()
+        total_time = end_time - start_time
+        log_event("gateway", "INFO", f"Recommendation flow complete: {len(enriched_albums)} albums in {total_time:.2f}s")
         
         return {
             "albums": enriched_albums,
             "total": len(enriched_albums),
+            "total_time_seconds": round(total_time, 2),
             "stats": {
                 "tracks_analyzed": len(all_tracks),
                 "artists_analyzed": len(all_artists),
