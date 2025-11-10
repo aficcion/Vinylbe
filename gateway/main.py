@@ -103,6 +103,12 @@ async def spotify_callback(code: str):
         raise HTTPException(status_code=500, detail=f"Failed to authenticate: {str(e)}")
 
 
+@app.get("/spotify/callback")
+async def spotify_callback_alias(code: str):
+    """Alias for /auth/callback to maintain compatibility with configured redirect URIs"""
+    return await spotify_callback(code)
+
+
 @app.get("/recommend-vinyl")
 async def recommend_vinyl():
     if not http_client:
