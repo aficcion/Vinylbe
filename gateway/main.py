@@ -111,10 +111,24 @@ async def spotify_callback_alias(code: str):
     return await spotify_callback(code)
 
 
-def filter_best_release(releases: list) -> dict | None:
-    """Filter releases to find the best LP to buy based on format and availability"""
+def filter_best_release(releases: list) -> tuple[dict | None, dict]:
+    """Filter releases to find the best LP to buy based on format and availability
+    
+    Returns:
+        (selected_release, debug_info)
+    """
+    debug_info = {
+        "total_releases_found": len(releases),
+        "lp_releases_found": 0,
+        "excluded_releases": 0,
+        "excluded_formats": [],
+        "selected_format": None,
+        "selection_reason": None
+    }
+    
     if not releases:
-        return None
+        debug_info["selection_reason"] = "no_results_from_discogs"
+        return None, debug_info
     
     preferred_formats = ["LP", "Album", "Vinyl"]
     excluded_formats = ["Box Set", "Compilation", "Single", "EP", "CD"]
@@ -130,14 +144,19 @@ def filter_best_release(releases: list) -> dict | None:
         
         is_excluded = any(excl.lower() in format_str for excl in excluded_formats)
         if is_excluded:
+            debug_info["excluded_releases"] += 1
+            debug_info["excluded_formats"].append(format_str)
             continue
         
         is_lp = any(pref.lower() in format_str for pref in preferred_formats)
         if is_lp:
             lp_releases.append(release)
     
+    debug_info["lp_releases_found"] = len(lp_releases)
+    
     if not lp_releases:
-        return None
+        debug_info["selection_reason"] = "only_excluded_formats"
+        return None, debug_info
     
     for release in lp_releases:
         format_value = release.get("format", "")
@@ -148,9 +167,18 @@ def filter_best_release(releases: list) -> dict | None:
             
         if "reissue" in format_str or "remaster" in format_str:
             continue
-        return release
+        debug_info["selected_format"] = format_str
+        debug_info["selection_reason"] = "original_lp_edition"
+        return release, debug_info
     
-    return lp_releases[0]
+    selected = lp_releases[0]
+    format_value = selected.get("format", "")
+    if isinstance(format_value, list):
+        debug_info["selected_format"] = " ".join(format_value).lower()
+    else:
+        debug_info["selected_format"] = str(format_value).lower()
+    debug_info["selection_reason"] = "reissue_or_remaster"
+    return selected, debug_info
 
 
 async def enrich_album_with_discogs(album: dict, idx: int, total: int, semaphore: asyncio.Semaphore) -> dict:
@@ -162,6 +190,12 @@ async def enrich_album_with_discogs(album: dict, idx: int, total: int, semaphore
         
         log_event("gateway", "INFO", f"[{idx}/{total}] Processing: {artist_name} - {album_name}")
         
+        debug_info = {
+            "status": None,
+            "message": None,
+            "details": {}
+        }
+        
         try:
             search_resp = await http_client.get(
                 f"{DISCOGS_SERVICE_URL}/search",
@@ -170,11 +204,23 @@ async def enrich_album_with_discogs(album: dict, idx: int, total: int, semaphore
             search_results = search_resp.json().get("results", [])
             
             if search_results:
-                release = filter_best_release(search_results)
+                release, filter_debug = filter_best_release(search_results)
+                debug_info["details"] = filter_debug
+                
                 if not release:
                     album["discogs_release"] = None
                     album["discogs_stats"] = None
-                    log_event("gateway", "INFO", f"[{idx}/{total}] ○ No suitable vinyl format found: {album_name}")
+                    
+                    if filter_debug["selection_reason"] == "only_excluded_formats":
+                        debug_info["status"] = "filtered"
+                        debug_info["message"] = f"Solo formatos excluidos disponibles ({filter_debug['excluded_releases']} releases)"
+                        log_event("gateway", "INFO", f"[{idx}/{total}] ○ Filtered: {album_name}")
+                    else:
+                        debug_info["status"] = "not_found"
+                        debug_info["message"] = "No se encontraron resultados"
+                        log_event("gateway", "INFO", f"[{idx}/{total}] ○ Not found: {album_name}")
+                    
+                    album["discogs_debug_info"] = debug_info
                     return album
                 
                 release_id = release.get("id")
@@ -187,16 +233,33 @@ async def enrich_album_with_discogs(album: dict, idx: int, total: int, semaphore
                 album["discogs_release"] = release
                 album["discogs_stats"] = stats
                 
+                has_price = stats.get("lowest_price_eur") is not None and stats.get("lowest_price_eur") > 0
+                
+                if has_price:
+                    debug_info["status"] = "success"
+                    debug_info["message"] = f"LP disponible - {filter_debug['selected_format']}"
+                else:
+                    debug_info["status"] = "no_price"
+                    debug_info["message"] = f"LP encontrado pero sin precio - {filter_debug['selected_format']}"
+                
                 log_event("gateway", "INFO", f"[{idx}/{total}] ✓ Enriched: {album_name}")
             else:
                 album["discogs_release"] = None
                 album["discogs_stats"] = None
+                debug_info["status"] = "not_found"
+                debug_info["message"] = "No se encontró en Discogs"
+                debug_info["details"] = {"total_releases_found": 0}
                 log_event("gateway", "INFO", f"[{idx}/{total}] ○ Not found on Discogs: {album_name}")
+                
         except Exception as e:
             log_event("gateway", "WARNING", f"[{idx}/{total}] ✗ Failed: {album_name} - {str(e)}")
             album["discogs_release"] = None
             album["discogs_stats"] = None
+            debug_info["status"] = "error"
+            debug_info["message"] = f"Error: {str(e)}"
+            debug_info["details"] = {}
         
+        album["discogs_debug_info"] = debug_info
         return album
 
 
