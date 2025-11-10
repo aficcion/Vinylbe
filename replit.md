@@ -17,7 +17,8 @@ Sistema completo de recomendación de vinilos basado en tus gustos musicales de 
 #### 2. **Discogs Service** (puerto 3001)
 - Búsqueda de releases en el catálogo de Discogs
 - Estadísticas del marketplace (precios, cantidad disponible)
-- Conversión automática de precios a EUR
+- Conversión automática de precios a EUR con tasas actuales (Nov 2025)
+- Rate limiting (2s entre peticiones para evitar 429s)
 - Generación de links de venta
 - **Archivos**: `services/discogs/`
 
@@ -49,7 +50,9 @@ Sistema completo de recomendación de vinilos basado en tus gustos musicales de 
    - Aplica boosts por período y artistas favoritos
 7. Para cada álbum recomendado:
    - Gateway busca en Discogs → Discogs Service
-   - Obtiene stats y precios (convertidos a EUR)
+   - **Filtrado inteligente**: De todas las releases, elige LP estándar (evita Box Sets/Compilaciones)
+   - Prefiere ediciones originales sobre reissues/remasters cuando sea posible
+   - Obtiene stats y precios del mejor candidato (convertidos a EUR)
 8. Retorna lista ordenada de álbumes con info de Spotify + Discogs
 ```
 
@@ -125,7 +128,8 @@ Esto levanta todos los servicios en paralelo:
 ✅ Boost adicional para artistas favoritos (5x)
 ✅ Filtrado de álbumes (mínimo 5 tracks)
 ✅ Integración con Discogs para datos de vinilos
-✅ Conversión automática de precios a EUR
+✅ **Filtrado inteligente de releases** (prefiere LP estándar, evita Box Sets)
+✅ Conversión automática de precios a EUR con tasas actuales (Nov 2025)
 ✅ **Procesamiento paralelo de TODOS los álbumes (concurrencia controlada con Semaphore)**
 ✅ **Tracking de tiempo total de procesamiento**
 ✅ **Breakdown detallado de scoring por álbum** (base score + periodo + boost)
@@ -165,7 +169,10 @@ Esto levanta todos los servicios en paralelo:
 
 ## Última Actualización
 10 de noviembre de 2025 - Sistema completamente funcional con:
-- Procesamiento paralelo de todos los álbumes (concurrencia limitada a 3 simultáneos)
-- Tracking de tiempo total
+- Procesamiento secuencial de todos los álbumes (rate limit 2s para evitar 429s)
+- **Filtrado inteligente de releases**: Prefiere LP estándar, evita Box Sets/Compilaciones
+- **Tasas de conversión EUR actualizadas** (Nov 2025): USD 0.865, GBP 1.140, JPY 0.00573
+- Tracking de tiempo total de procesamiento
 - Breakdown detallado de scoring visible en UI
 - Sin límites artificiales en cantidad de álbumes procesados
+- Conversión de precios robusta (maneja casos sin precio disponible)
