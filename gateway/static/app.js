@@ -141,6 +141,7 @@ function displayResults(albums, stats, totalTime) {
     resultsDiv.innerHTML = albums.map(album => {
         const albumInfo = album.album_info || {};
         const discogsStats = album.discogs_stats || {};
+        const debugInfo = album.discogs_debug_info || {};
         const albumName = albumInfo.name || 'Unknown Album';
         const artistName = albumInfo.artists?.[0]?.name || 'Unknown Artist';
         const imageUrl = albumInfo.images?.[0]?.url || 'https://via.placeholder.com/300';
@@ -156,6 +157,61 @@ function displayResults(albums, stats, totalTime) {
         const boostMultiplier = breakdown.artist_boost_multiplier || 1;
         const scoreByPeriod = breakdown.score_by_period || {};
         const tracksByPeriod = breakdown.tracks_by_period || {};
+        
+        // Discogs Debug Info Badge
+        const debugStatus = debugInfo.status || 'unknown';
+        const debugMessage = debugInfo.message || 'Sin información';
+        const debugDetails = debugInfo.details || {};
+        
+        const statusConfig = {
+            'success': { 
+                icon: '✓', 
+                color: 'bg-green-100 text-green-800 border-green-300',
+                iconColor: 'text-green-600'
+            },
+            'no_price': { 
+                icon: '⚠', 
+                color: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+                iconColor: 'text-yellow-600'
+            },
+            'filtered': { 
+                icon: '○', 
+                color: 'bg-orange-100 text-orange-800 border-orange-300',
+                iconColor: 'text-orange-600'
+            },
+            'not_found': { 
+                icon: '✗', 
+                color: 'bg-gray-100 text-gray-800 border-gray-300',
+                iconColor: 'text-gray-600'
+            },
+            'error': { 
+                icon: '!', 
+                color: 'bg-red-100 text-red-800 border-red-300',
+                iconColor: 'text-red-600'
+            }
+        };
+        
+        const config = statusConfig[debugStatus] || statusConfig['not_found'];
+        
+        const debugBadgeHtml = `
+            <div class="border ${config.color} rounded-lg p-2 mb-3 text-xs">
+                <div class="flex items-center">
+                    <span class="font-bold ${config.iconColor} mr-2">${config.icon}</span>
+                    <span class="font-medium">${debugMessage}</span>
+                </div>
+                ${debugDetails.total_releases_found !== undefined ? `
+                    <details class="mt-1">
+                        <summary class="cursor-pointer hover:underline">Detalles técnicos</summary>
+                        <div class="mt-1 pl-4 text-xs opacity-75">
+                            <div>Releases encontrados: ${debugDetails.total_releases_found || 0}</div>
+                            <div>LPs válidos: ${debugDetails.lp_releases_found || 0}</div>
+                            <div>Excluidos: ${debugDetails.excluded_releases || 0}</div>
+                            ${debugDetails.excluded_formats && debugDetails.excluded_formats.length > 0 ? `<div class="text-xs mt-1">Formatos excluidos: ${debugDetails.excluded_formats.slice(0, 3).join(', ')}</div>` : ''}
+                        </div>
+                    </details>
+                ` : ''}
+            </div>
+        `;
         
         return `
             <div class="bg-white rounded-lg shadow-md overflow-hidden">
@@ -181,6 +237,7 @@ function displayResults(albums, stats, totalTime) {
                         </div>
                     </details>
                     <div class="border-t pt-3 mt-3">
+                        ${debugBadgeHtml}
                         <div class="flex justify-between items-center mb-2">
                             <span class="text-gray-700">Vinyl Price:</span>
                             <span class="font-bold text-green-600">${price}</span>
