@@ -153,12 +153,16 @@ async def recommend_vinyl():
         albums = albums_resp.json().get("albums", [])
         log_event("gateway", "INFO", f"Generated {len(albums)} album recommendations")
         
-        log_event("gateway", "INFO", "Step 6: Enriching with Discogs data")
+        log_event("gateway", "INFO", f"Step 6: Enriching top 20 albums with Discogs data (rate limited, ~45 seconds)")
+        top_albums = albums[:20]
         enriched_albums = []
-        for album in albums[:50]:
+        
+        for idx, album in enumerate(top_albums, 1):
             album_info = album.get("album_info", {})
             artist_name = album_info.get("artists", [{}])[0].get("name", "Unknown")
             album_name = album_info.get("name", "Unknown")
+            
+            log_event("gateway", "INFO", f"[{idx}/20] Processing: {artist_name} - {album_name}")
             
             try:
                 search_resp = await http_client.get(
@@ -179,12 +183,13 @@ async def recommend_vinyl():
                     album["discogs_release"] = release
                     album["discogs_stats"] = stats
                     
-                    log_event("gateway", "INFO", f"Enriched album: {album_name}")
+                    log_event("gateway", "INFO", f"[{idx}/20] ✓ Enriched: {album_name}")
                 else:
                     album["discogs_release"] = None
                     album["discogs_stats"] = None
+                    log_event("gateway", "INFO", f"[{idx}/20] ○ Not found on Discogs: {album_name}")
             except Exception as e:
-                log_event("gateway", "WARNING", f"Failed to enrich album {album_name}: {str(e)}")
+                log_event("gateway", "WARNING", f"[{idx}/20] ✗ Failed: {album_name} - {str(e)}")
                 album["discogs_release"] = None
                 album["discogs_stats"] = None
             

@@ -1,4 +1,6 @@
 import httpx
+import asyncio
+import time
 from typing import List, Dict, Optional
 from libs.shared.utils import log_event
 
@@ -9,6 +11,8 @@ class DiscogsClient:
         self.secret = secret
         self.client: Optional[httpx.AsyncClient] = None
         self.api_base = "https://api.discogs.com"
+        self.last_request_time = 0.0
+        self.min_request_interval = 1.1
     
     async def start(self):
         headers = {"User-Agent": "VinylRecommender/1.0"}
@@ -21,6 +25,17 @@ class DiscogsClient:
     def is_ready(self) -> bool:
         return self.client is not None and bool(self.key) and bool(self.secret)
     
+    async def _rate_limit(self):
+        """Rate limiter: ensure we don't exceed 60 requests per minute"""
+        current_time = time.time()
+        time_since_last_request = current_time - self.last_request_time
+        
+        if time_since_last_request < self.min_request_interval:
+            wait_time = self.min_request_interval - time_since_last_request
+            await asyncio.sleep(wait_time)
+        
+        self.last_request_time = time.time()
+    
     def _get_auth_params(self, **params) -> dict:
         return {
             **params,
@@ -31,6 +46,8 @@ class DiscogsClient:
     async def search_release(self, artist: str, title: str) -> List[dict]:
         if not self.client:
             raise ValueError("Client not started")
+        
+        await self._rate_limit()
         
         params = self._get_auth_params(
             artist=artist,
@@ -53,6 +70,8 @@ class DiscogsClient:
     async def get_marketplace_stats(self, release_id: int, currency: str = "EUR") -> dict:
         if not self.client:
             raise ValueError("Client not started")
+        
+        await self._rate_limit()
         
         params = self._get_auth_params(currency=currency)
         url = f"{self.api_base}/marketplace/stats/{release_id}"
