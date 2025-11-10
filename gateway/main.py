@@ -198,9 +198,9 @@ async def recommend_vinyl():
         log_event("gateway", "INFO", f"Generated {len(albums)} album recommendations")
         
         total_albums = len(albums)
-        log_event("gateway", "INFO", f"Step 6: Enriching ALL {total_albums} albums with Discogs data (concurrent processing)")
+        log_event("gateway", "INFO", f"Step 6: Enriching ALL {total_albums} albums with Discogs data (sequential with 2s rate limit)")
         
-        semaphore = asyncio.Semaphore(3)
+        semaphore = asyncio.Semaphore(1)
         
         tasks = [
             enrich_album_with_discogs(album, idx, total_albums, semaphore)

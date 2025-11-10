@@ -12,7 +12,7 @@ class DiscogsClient:
         self.client: Optional[httpx.AsyncClient] = None
         self.api_base = "https://api.discogs.com"
         self.last_request_time = 0.0
-        self.min_request_interval = 1.1
+        self.min_request_interval = 2.0
     
     async def start(self):
         headers = {"User-Agent": "VinylRecommender/1.0"}
@@ -83,15 +83,21 @@ class DiscogsClient:
             
             sell_list_url = f"https://www.discogs.com/sell/list?format=Vinyl&release_id={release_id}"
             
-            lowest_price_data = data.get("lowest_price", {})
-            source_price = lowest_price_data.get("value")
-            source_currency = lowest_price_data.get("currency", "EUR")
+            lowest_price_data = data.get("lowest_price")
             
-            if source_price is not None and source_currency != "EUR":
-                price_in_eur = await self.convert_to_eur(source_price, source_currency)
-                log_event("discogs-client", "INFO", f"Converted {source_price} {source_currency} to {price_in_eur:.2f} EUR")
+            if lowest_price_data is None or not isinstance(lowest_price_data, dict):
+                source_price = None
+                source_currency = "EUR"
+                price_in_eur = None
             else:
-                price_in_eur = source_price
+                source_price = lowest_price_data.get("value")
+                source_currency = lowest_price_data.get("currency", "EUR")
+                
+                if source_price is not None and source_currency != "EUR":
+                    price_in_eur = await self.convert_to_eur(source_price, source_currency)
+                    log_event("discogs-client", "INFO", f"Converted {source_price} {source_currency} to {price_in_eur:.2f} EUR")
+                else:
+                    price_in_eur = source_price
             
             return {
                 "release_id": release_id,
