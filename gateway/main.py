@@ -111,29 +111,23 @@ async def spotify_callback_alias(code: str):
     return await spotify_callback(code)
 
 
-def filter_best_release(releases: list) -> tuple[dict | None, dict]:
-    """Filter releases to find the best LP to buy based on format and availability
+def get_vinyl_releases(releases: list) -> tuple[list, dict]:
+    """Get all vinyl releases ordered by preference (originals first, then reissues)
     
     Returns:
-        (selected_release, debug_info)
+        (list_of_releases, debug_info)
     """
     debug_info = {
         "total_releases_found": len(releases),
-        "lp_releases_found": 0,
-        "excluded_releases": 0,
-        "excluded_formats": [],
-        "selected_format": None,
-        "selection_reason": None
+        "vinyl_releases_found": 0,
     }
     
     if not releases:
-        debug_info["selection_reason"] = "no_results_from_discogs"
-        return None, debug_info
+        return [], debug_info
     
     preferred_formats = ["LP", "Album", "Vinyl"]
-    excluded_formats = ["Box Set", "Compilation", "Single", "EP", "CD"]
     
-    lp_releases = []
+    vinyl_releases = []
     for release in releases:
         format_value = release.get("format", "")
         
@@ -142,23 +136,17 @@ def filter_best_release(releases: list) -> tuple[dict | None, dict]:
         else:
             format_str = str(format_value).lower()
         
-        is_excluded = any(excl.lower() in format_str for excl in excluded_formats)
-        if is_excluded:
-            debug_info["excluded_releases"] += 1
-            debug_info["excluded_formats"].append(format_str)
-            continue
-        
-        is_lp = any(pref.lower() in format_str for pref in preferred_formats)
-        if is_lp:
-            lp_releases.append(release)
+        is_vinyl = any(pref.lower() in format_str for pref in preferred_formats)
+        if is_vinyl:
+            vinyl_releases.append(release)
     
-    debug_info["lp_releases_found"] = len(lp_releases)
+    debug_info["vinyl_releases_found"] = len(vinyl_releases)
     
-    if not lp_releases:
-        debug_info["selection_reason"] = "only_excluded_formats"
-        return None, debug_info
+    # Sort: originals first, then reissues/remasters
+    originals = []
+    reissues = []
     
-    for release in lp_releases:
+    for release in vinyl_releases:
         format_value = release.get("format", "")
         if isinstance(format_value, list):
             format_str = " ".join(format_value).lower()
@@ -166,23 +154,18 @@ def filter_best_release(releases: list) -> tuple[dict | None, dict]:
             format_str = str(format_value).lower()
             
         if "reissue" in format_str or "remaster" in format_str:
-            continue
-        debug_info["selected_format"] = format_str
-        debug_info["selection_reason"] = "original_lp_edition"
-        return release, debug_info
+            reissues.append(release)
+        else:
+            originals.append(release)
     
-    selected = lp_releases[0]
-    format_value = selected.get("format", "")
-    if isinstance(format_value, list):
-        debug_info["selected_format"] = " ".join(format_value).lower()
-    else:
-        debug_info["selected_format"] = str(format_value).lower()
-    debug_info["selection_reason"] = "reissue_or_remaster"
-    return selected, debug_info
+    # Return originals first, then reissues
+    ordered_releases = originals + reissues
+    
+    return ordered_releases, debug_info
 
 
 async def enrich_album_with_discogs(album: dict, idx: int, total: int, semaphore: asyncio.Semaphore) -> dict:
-    """Enrich a single album with Discogs data using controlled concurrency"""
+    """Enrich a single album with Discogs data by trying multiple releases until finding one with price"""
     async with semaphore:
         album_info = album.get("album_info", {})
         artist_name = album_info.get("artists", [{}])[0].get("name", "Unknown")
@@ -203,53 +186,107 @@ async def enrich_album_with_discogs(album: dict, idx: int, total: int, semaphore
             )
             search_results = search_resp.json().get("results", [])
             
-            if search_results:
-                release, filter_debug = filter_best_release(search_results)
-                debug_info["details"] = filter_debug
-                
-                if not release:
-                    album["discogs_release"] = None
-                    album["discogs_stats"] = None
-                    
-                    if filter_debug["selection_reason"] == "only_excluded_formats":
-                        debug_info["status"] = "filtered"
-                        debug_info["message"] = f"Solo formatos excluidos disponibles ({filter_debug['excluded_releases']} releases)"
-                        log_event("gateway", "INFO", f"[{idx}/{total}] ○ Filtered: {album_name}")
-                    else:
-                        debug_info["status"] = "not_found"
-                        debug_info["message"] = "No se encontraron resultados"
-                        log_event("gateway", "INFO", f"[{idx}/{total}] ○ Not found: {album_name}")
-                    
-                    album["discogs_debug_info"] = debug_info
-                    return album
-                
-                release_id = release.get("id")
-                
-                stats_resp = await http_client.get(
-                    f"{DISCOGS_SERVICE_URL}/stats/{release_id}"
-                )
-                stats = stats_resp.json()
-                
-                album["discogs_release"] = release
-                album["discogs_stats"] = stats
-                
-                has_price = stats.get("lowest_price_eur") is not None and stats.get("lowest_price_eur") > 0
-                
-                if has_price:
-                    debug_info["status"] = "success"
-                    debug_info["message"] = f"LP disponible - {filter_debug['selected_format']}"
-                else:
-                    debug_info["status"] = "no_price"
-                    debug_info["message"] = f"LP encontrado pero sin precio - {filter_debug['selected_format']}"
-                
-                log_event("gateway", "INFO", f"[{idx}/{total}] ✓ Enriched: {album_name}")
-            else:
+            if not search_results:
                 album["discogs_release"] = None
                 album["discogs_stats"] = None
                 debug_info["status"] = "not_found"
                 debug_info["message"] = "No se encontró en Discogs"
                 debug_info["details"] = {"total_releases_found": 0}
                 log_event("gateway", "INFO", f"[{idx}/{total}] ○ Not found on Discogs: {album_name}")
+                album["discogs_debug_info"] = debug_info
+                return album
+            
+            # Get all vinyl releases ordered by preference
+            vinyl_releases, search_debug = get_vinyl_releases(search_results)
+            debug_info["details"] = search_debug
+            
+            if not vinyl_releases:
+                album["discogs_release"] = None
+                album["discogs_stats"] = None
+                debug_info["status"] = "not_found"
+                debug_info["message"] = "No se encontraron vinilos"
+                log_event("gateway", "INFO", f"[{idx}/{total}] ○ No vinyl: {album_name}")
+                album["discogs_debug_info"] = debug_info
+                return album
+            
+            # Try up to 5 releases to find one with price
+            max_attempts = min(5, len(vinyl_releases))
+            debug_info["details"]["releases_tried"] = 0
+            debug_info["details"]["releases_with_price"] = 0
+            
+            selected_release = None
+            selected_stats = None
+            
+            for attempt_idx, release in enumerate(vinyl_releases[:max_attempts], 1):
+                release_id = release.get("id")
+                format_value = release.get("format", "")
+                if isinstance(format_value, list):
+                    format_str = " ".join(format_value)
+                else:
+                    format_str = str(format_value)
+                
+                log_event("gateway", "INFO", f"[{idx}/{total}] Trying release {attempt_idx}/{max_attempts}: ID {release_id} ({format_str})")
+                
+                try:
+                    stats_resp = await http_client.get(
+                        f"{DISCOGS_SERVICE_URL}/stats/{release_id}"
+                    )
+                    stats = stats_resp.json()
+                    debug_info["details"]["releases_tried"] = attempt_idx
+                    
+                    has_price = stats.get("lowest_price_eur") is not None and stats.get("lowest_price_eur") > 0
+                    
+                    if has_price:
+                        debug_info["details"]["releases_with_price"] += 1
+                        selected_release = release
+                        selected_stats = stats
+                        debug_info["details"]["selected_release_index"] = attempt_idx
+                        debug_info["details"]["selected_format"] = format_str
+                        log_event("gateway", "INFO", f"[{idx}/{total}] ✓ Found price on attempt {attempt_idx}: €{stats['lowest_price_eur']:.2f}")
+                        break
+                    else:
+                        log_event("gateway", "INFO", f"[{idx}/{total}] ○ Release {release_id} has no price, trying next...")
+                        
+                except Exception as e:
+                    log_event("gateway", "WARNING", f"[{idx}/{total}] Failed to get stats for release {release_id}: {str(e)}")
+                    continue
+            
+            # If we didn't find any with price, use the first release anyway
+            if not selected_release:
+                selected_release = vinyl_releases[0]
+                release_id = selected_release.get("id")
+                try:
+                    stats_resp = await http_client.get(
+                        f"{DISCOGS_SERVICE_URL}/stats/{release_id}"
+                    )
+                    selected_stats = stats_resp.json()
+                except Exception as e:
+                    log_event("gateway", "WARNING", f"[{idx}/{total}] Failed to get stats for fallback release: {str(e)}")
+                    selected_stats = {
+                        "release_id": release_id,
+                        "lowest_price_eur": None,
+                        "num_for_sale": 0,
+                        "sell_list_url": f"https://www.discogs.com/sell/list?format=Vinyl&release_id={release_id}"
+                    }
+            
+            album["discogs_release"] = selected_release
+            album["discogs_stats"] = selected_stats
+            
+            has_price = selected_stats.get("lowest_price_eur") is not None and selected_stats.get("lowest_price_eur") > 0
+            
+            if has_price:
+                debug_info["status"] = "success"
+                format_val = selected_release.get("format", "")
+                if isinstance(format_val, list):
+                    fmt = " ".join(format_val)
+                else:
+                    fmt = str(format_val)
+                debug_info["message"] = f"Vinilo disponible - {fmt}"
+                log_event("gateway", "INFO", f"[{idx}/{total}] ✓ Enriched: {album_name}")
+            else:
+                debug_info["status"] = "no_price"
+                debug_info["message"] = f"Probados {debug_info['details']['releases_tried']} releases, ninguno con precio"
+                log_event("gateway", "INFO", f"[{idx}/{total}] ⚠ No price found after trying {debug_info['details']['releases_tried']} releases: {album_name}")
                 
         except Exception as e:
             log_event("gateway", "WARNING", f"[{idx}/{total}] ✗ Failed: {album_name} - {str(e)}")
