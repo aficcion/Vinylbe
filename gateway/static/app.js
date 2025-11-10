@@ -203,10 +203,12 @@ function displayResults(albums, stats, totalTime) {
                     <details class="mt-1">
                         <summary class="cursor-pointer hover:underline">Detalles técnicos</summary>
                         <div class="mt-1 pl-4 text-xs opacity-75">
-                            <div>Releases encontrados: ${debugDetails.total_releases_found || 0}</div>
-                            <div>LPs válidos: ${debugDetails.lp_releases_found || 0}</div>
-                            <div>Excluidos: ${debugDetails.excluded_releases || 0}</div>
-                            ${debugDetails.excluded_formats && debugDetails.excluded_formats.length > 0 ? `<div class="text-xs mt-1">Formatos excluidos: ${debugDetails.excluded_formats.slice(0, 3).join(', ')}</div>` : ''}
+                            <div>Releases en Discogs: ${debugDetails.total_releases_found || 0}</div>
+                            <div>Vinilos válidos: ${debugDetails.vinyl_releases_found || 0}</div>
+                            ${debugDetails.releases_tried !== undefined ? `<div class="font-semibold text-blue-700">Probados: ${debugDetails.releases_tried || 0}</div>` : ''}
+                            ${debugDetails.releases_with_price !== undefined ? `<div>Con precio: ${debugDetails.releases_with_price || 0}</div>` : ''}
+                            ${debugDetails.selected_release_index !== undefined ? `<div class="text-green-700">✓ Seleccionado: #${debugDetails.selected_release_index}</div>` : ''}
+                            ${debugDetails.selected_format ? `<div class="text-xs mt-1 italic">${debugDetails.selected_format}</div>` : ''}
                         </div>
                     </details>
                 ` : ''}
