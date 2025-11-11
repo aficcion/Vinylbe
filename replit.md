@@ -39,6 +39,8 @@ Sistema completo de recomendación de vinilos basado en tus gustos musicales de 
 
 ### Flujo de Recomendación
 
+#### Fase 1: Recomendaciones de Spotify (Automática)
+
 ```
 1. Usuario se autentica en Spotify → Gateway → Spotify Service
 2. Gateway solicita 300 tracks en 3 períodos → Spotify Service (18 peticiones)
@@ -48,15 +50,33 @@ Sistema completo de recomendación de vinilos basado en tus gustos musicales de 
 6. Gateway solicita agregación de álbumes → Recommender Service
    - Filtra álbumes con < 5 tracks
    - Aplica boosts por período y artistas favoritos
-7. Para cada álbum recomendado:
-   - Gateway busca en Discogs → Discogs Service
-   - **Búsqueda inteligente multi-release**: Prueba hasta 5 releases para encontrar precio
-   - Ordena por preferencia: ediciones originales primero, luego reissues/remasters
-   - Itera probando stats de cada release hasta encontrar uno con precio disponible
-   - Si ninguno tiene precio después de 5 intentos, usa el primero como fallback
-   - Convierte precios a EUR (convertidos a EUR)
-8. Retorna lista ordenada de álbumes con info de Spotify + Discogs
+7. Retorna lista de álbumes con scoring (SIN datos de Discogs)
 ```
+
+#### Fase 2: Búsqueda en Discogs (Manual/Interactiva)
+
+```
+1. Usuario ve lista de álbumes recomendados con botón "Search Discogs"
+2. Al hacer click → GET /discogs/search/{artist}/{album}
+   - Gateway busca releases en Discogs Service
+   - Filtra solo vinilos (LP format)
+   - Ordena por preferencia: originales primero, luego reissues
+   - Retorna lista de releases SIN precios
+   - Request Log muestra: timestamp, endpoint, tiempo, # releases encontrados
+3. UI muestra lista de releases (título, año, formato, label)
+4. Por cada release, botón "Get Price"
+5. Al hacer click → GET /discogs/stats/{release_id}
+   - Gateway obtiene stats del marketplace → Discogs Service
+   - Convierte precio a EUR
+   - Request Log muestra: timestamp, endpoint, tiempo, precio/unidades
+6. UI muestra precio, unidades disponibles, link de compra
+```
+
+**Ventajas del Flujo Interactivo:**
+- ✅ Control total: Usuario decide cuándo consumir cuota de Discogs
+- ✅ Transparencia: Cada petición HTTP visible en Request Log
+- ✅ Exploración: Comparar múltiples releases manualmente
+- ✅ Debug: Visibilidad completa de qué se pide y qué responde
 
 ## Endpoints Principales (Gateway)
 
@@ -65,7 +85,14 @@ Sistema completo de recomendación de vinilos basado en tus gustos musicales de 
 - **GET** `/auth/callback?code={code}` - Callback OAuth
 
 ### Recomendación
-- **GET** `/recommend-vinyl` - Flujo completo de recomendación
+- **GET** `/recommend-vinyl` - Obtiene recomendaciones de Spotify (sin Discogs)
+
+### Discogs Interactivo (NUEVO)
+- **GET** `/discogs/search/{artist}/{album}` - Busca releases de vinilo en Discogs
+  - Retorna lista de releases con: id, title, year, format, label
+  - NO incluye precios (se obtienen por separado)
+- **GET** `/discogs/stats/{release_id}` - Obtiene stats de marketplace para un release
+  - Retorna: precio EUR, unidades disponibles, link de compra
 
 ### Monitoreo
 - **GET** `/health` - Estado de todos los servicios
@@ -124,51 +151,71 @@ Esto levanta todos los servicios en paralelo:
 
 ## Características Implementadas
 
+### Backend
 ✅ Arquitectura de 4 microservicios independientes
 ✅ Obtención de 300 tracks y 300 artistas de Spotify
 ✅ Sistema de puntuación con boosts por período temporal
 ✅ Boost adicional para artistas favoritos (5x)
 ✅ Filtrado de álbumes (mínimo 5 tracks)
 ✅ Integración con Discogs para datos de vinilos
-✅ **Búsqueda multi-release inteligente** (prueba hasta 5 releases para encontrar precio)
-✅ **Permite todos los formatos** (Box Sets, Compilaciones, etc.) - prioriza originales
+✅ **Búsqueda interactiva de Discogs controlada por usuario**
+✅ **Endpoints separados**: /search y /stats para control granular
+✅ **Permite todos los formatos** (Box Sets, Compilaciones, etc.) - ordena por preferencia
 ✅ Conversión automática de precios a EUR con tasas actuales (Nov 2025)
-✅ **Procesamiento secuencial de TODOS los álbumes (rate limit 2s para evitar 429s)**
-✅ **Tracking de tiempo total de procesamiento**
-✅ **Breakdown detallado de scoring por álbum** (base score + periodo + boost)
 ✅ Health checks en todos los servicios
 ✅ Logging detallado en cada paso
 ✅ Gestión de errores robusta
 
-## Frontend de Testing (Estado Actual)
+### Frontend
+✅ **UI completamente interactiva** para búsqueda de Discogs
+✅ **Request Log en tiempo real** - visibilidad de cada petición HTTP
+✅ **Búsqueda controlada por usuario** - decide cuándo buscar en Discogs
+✅ **Exploración de releases** - ve todos los releases antes de consultar precio
+✅ **Breakdown detallado de scoring** por álbum (base score + periodo + boost)
+✅ **Tracking de tiempo** de procesamiento Spotify
+✅ Service status monitoring visual
+
+## Frontend Interactivo (Estado Actual)
 
 ✅ UI completa implementada en `gateway/static/`:
-- Service Status: Monitoreo visual del estado de cada microservicio
-- Test Panel: Botones para probar login de Spotify y obtener recomendaciones
-- Progress Tracker: Visualización de pasos (actualmente simulado)
-- Results View: Cards con álbumes recomendados, precios en EUR, y links a Discogs
-- **Total Time Display**: Muestra el tiempo total de procesamiento
-- **Score Breakdown**: Desglose detallado de puntuación para cada álbum
+
+### Secciones Principales
+1. **Service Status**: Monitoreo visual del estado de cada microservicio
+2. **Test Panel**: Botones para login y obtener recomendaciones
+3. **📡 Discogs Request Log** (NUEVO): Panel que muestra todas las peticiones a Discogs
+   - Timestamp de cada petición
+   - Método y endpoint llamado
+   - Parámetros (artist/album o release_id)
+   - Status code (200/500)
+   - Tiempo de respuesta en segundos
+   - Resumen de datos (# releases, precio/unidades)
+4. **Progress Tracker**: Visualización de pasos de recomendación Spotify
+5. **Results View**: Cards con álbumes recomendados
+
+### Cards de Álbumes (Interactivas)
+- Imagen, nombre, artista, score
+- **Score Breakdown**: Desglose detallado de puntuación
   - Base score (suma de tracks)
   - Boost de artista favorito (si aplica)
   - Distribución por período temporal (short/medium/long term)
-  - Número de tracks por período
-- **Discogs Debug Info**: Información visual del estado de búsqueda de Discogs para cada álbum
-  - ✓ Success (verde): Vinilo disponible con precio
-  - ⚠ No Price (amarillo): Probados múltiples releases, ninguno con precio
-  - ✗ Not Found (gris): No encontrado en Discogs
-  - ! Error (rojo): Error en la búsqueda
-  - Detalles técnicos expandibles: 
-    - Releases en Discogs (total encontrados)
-    - Vinilos válidos (que tienen formato LP/Vinyl)
-    - **Probados** (cuántos se intentaron, máx 5)
-    - Con precio (cuántos tenían precio disponible)
-    - Seleccionado (índice del release elegido)
-    - Formato del vinilo seleccionado
+- **🔍 Search Discogs** (botón): Busca releases en Discogs
+  - Al hacer click: llama `/discogs/search/{artist}/{album}`
+  - Muestra lista de releases encontrados
+- **Lista de Releases** (expandible):
+  - Por cada release: título, año, formato, label
+  - **Get Price** (botón): Obtiene precio del marketplace
+    - Al hacer click: llama `/discogs/stats/{release_id}`
+    - Muestra precio EUR, unidades, link "Buy on Discogs"
+
+### Request Log
+- Registra TODAS las peticiones a Discogs en tiempo real
+- Formato: `[HH:MM:SS] GET /endpoint params → STATUS (Xs) → resumen`
+- Ejemplo: `[10:45:23] GET /discogs/search/Tame Impala/Currents → 200 (1.2s) → 5 releases`
+- Scroll automático para ver últimas peticiones
+- Persistente durante la sesión
 
 ⚠️ Limitaciones actuales:
-- Progress tracking es simulado (no usa SSE real)
-- No hay consola de logs en tiempo real
+- Progress tracking de Spotify es simulado (no usa SSE real)
 - Requiere credenciales de Spotify configuradas para funcionar
 
 ## Próximas Mejoras
@@ -183,13 +230,25 @@ Esto levanta todos los servicios en paralelo:
 - [ ] Métricas y observabilidad (Prometheus/Grafana)
 
 ## Última Actualización
-10 de noviembre de 2025 - Sistema completamente funcional con:
-- Procesamiento secuencial de todos los álbumes (rate limit 2s para evitar 429s)
-- **Búsqueda multi-release inteligente**: Prueba hasta 5 releases por álbum para encontrar precio
-- **Permite todos los formatos**: Box Sets, Compilaciones, etc. (ordena por preferencia)
+11 de noviembre de 2025 - **Cambio a Flujo Interactivo de Discogs**
+
+### Cambios Principales:
+- ❌ **Eliminado**: Enrichment automático de Discogs en `/recommend-vinyl`
+- ✅ **Nuevo**: Endpoints interactivos `/discogs/search` y `/discogs/stats`
+- ✅ **Nuevo**: Request Log en UI - visibilidad completa de peticiones HTTP
+- ✅ **Nuevo**: Búsqueda controlada por usuario con botones "Search Discogs" y "Get Price"
+- ✅ **Nuevo**: Exploración de múltiples releases antes de consultar precios
+
+### Características Técnicas:
 - **Tasas de conversión EUR actualizadas** (Nov 2025): USD 0.865, GBP 1.140, JPY 0.00573
-- Tracking de tiempo total de procesamiento
+- **Permite todos los formatos**: Box Sets, Compilaciones, etc. (ordena por preferencia)
+- Tracking de tiempo total de procesamiento Spotify
 - Breakdown detallado de scoring visible en UI
-- Debug info detallado: releases probados, índice seleccionado, formato
-- Sin límites artificiales en cantidad de álbumes procesados
-- Conversión de precios robusta (maneja casos sin precio disponible)
+- Health checks en todos los servicios
+- Gestión de errores robusta
+
+### Ventajas del Nuevo Flujo:
+- 🎯 **Control total**: Usuario decide cuándo consumir cuota de Discogs
+- 📊 **Transparencia**: Cada petición HTTP visible con tiempo y resultado
+- 🔍 **Exploración**: Ver todos los releases antes de consultar precios
+- 🐛 **Debug**: Saber exactamente qué se pidió y qué respondió la API

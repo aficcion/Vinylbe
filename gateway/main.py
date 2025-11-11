@@ -123,7 +123,7 @@ async def search_discogs(artist: str, album: str):
     try:
         resp = await http_client.get(
             f"{DISCOGS_SERVICE_URL}/search",
-            params={"artist": artist, "album": album}
+            params={"artist": artist, "title": album}
         )
         data = resp.json()
         releases = data.get("releases", [])
