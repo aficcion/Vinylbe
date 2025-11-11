@@ -207,10 +207,25 @@ Esto levanta todos los servicios en paralelo:
     - Al hacer click: llama `/discogs/stats/{release_id}`
     - Muestra precio EUR, unidades, link "Buy on Discogs"
 
-### Request Log
+### Request Log (MEJORADO ✨)
 - Registra TODAS las peticiones a Discogs en tiempo real
-- Formato: `[HH:MM:SS] GET /endpoint params → STATUS (Xs) → resumen`
-- Ejemplo: `[10:45:23] GET /discogs/search/Tame Impala/Currents → 200 (1.2s) → 5 releases`
+- **Muestra URLs completas de la API de Discogs** con credenciales ofuscadas
+- Formato multinivel:
+  ```
+  [HH:MM:SS] GET /discogs/search/Artist/Album → 200 (1.2s) → 5 releases
+    → https://api.discogs.com/database/search
+      &artist=Artist+Name
+      &release_title=Album+Name
+      &format=Vinyl
+      &type=release
+      &key=[HIDDEN]
+      &secret=[HIDDEN]
+  ```
+- **Ventajas del nuevo formato:**
+  - ✅ Debugging completo: Ve exactamente qué parámetros se enviaron
+  - ✅ Seguridad: Credenciales automáticamente ofuscadas como `[HIDDEN]`
+  - ✅ Transparencia total: Cada query parameter visible
+  - ✅ Copiar/pegar: Puedes recrear la petición manualmente si es necesario
 - Scroll automático para ver últimas peticiones
 - Persistente durante la sesión
 
@@ -230,9 +245,16 @@ Esto levanta todos los servicios en paralelo:
 - [ ] Métricas y observabilidad (Prometheus/Grafana)
 
 ## Última Actualización
-11 de noviembre de 2025 - **Cambio a Flujo Interactivo de Discogs**
+11 de noviembre de 2025 - **Request Log Mejorado con URLs Completas**
 
 ### Cambios Principales:
+- ✅ **NUEVO**: Request Log muestra URLs completas de la API de Discogs
+- ✅ **NUEVO**: Credenciales automáticamente ofuscadas como `[HIDDEN]`
+- ✅ **NUEVO**: Cada parámetro de query visible y formateado
+- ✅ **Arquitectura**: Flujo de debug info end-to-end (client → service → gateway → UI)
+- ✅ **Compatibilidad**: Ambos campos `lowest_price` y `lowest_price_eur` retornados
+
+### Cambios Anteriores (11 Nov 2025):
 - ❌ **Eliminado**: Enrichment automático de Discogs en `/recommend-vinyl`
 - ✅ **Nuevo**: Endpoints interactivos `/discogs/search` y `/discogs/stats`
 - ✅ **Nuevo**: Request Log en UI - visibilidad completa de peticiones HTTP
