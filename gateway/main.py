@@ -354,31 +354,18 @@ async def recommend_vinyl():
         albums = albums_resp.json().get("albums", [])
         log_event("gateway", "INFO", f"Generated {len(albums)} album recommendations")
         
-        total_albums = len(albums)
-        log_event("gateway", "INFO", f"Step 6: Enriching ALL {total_albums} albums with Discogs data (sequential with 2s rate limit)")
-        
-        semaphore = asyncio.Semaphore(1)
-        
-        tasks = [
-            enrich_album_with_discogs(album, idx, total_albums, semaphore)
-            for idx, album in enumerate(albums, 1)
-        ]
-        
-        enriched_albums = await asyncio.gather(*tasks)
-        
         end_time = time.time()
         total_time = end_time - start_time
-        log_event("gateway", "INFO", f"Recommendation flow complete: {len(enriched_albums)} albums in {total_time:.2f}s")
+        log_event("gateway", "INFO", f"Recommendation flow complete: {len(albums)} albums in {total_time:.2f}s")
         
         return {
-            "albums": enriched_albums,
-            "total": len(enriched_albums),
+            "albums": albums,
+            "total": len(albums),
             "total_time_seconds": round(total_time, 2),
             "stats": {
                 "tracks_analyzed": len(all_tracks),
                 "artists_analyzed": len(all_artists),
-                "albums_found": len(albums),
-                "albums_with_discogs_data": len([a for a in enriched_albums if a.get("discogs_release")])
+                "albums_found": len(albums)
             }
         }
     
