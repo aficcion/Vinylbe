@@ -1,9 +1,9 @@
 // Request Log
 const requestLog = [];
 
-function addRequestLog(method, endpoint, params, status, time, summary) {
+function addRequestLog(method, endpoint, params, status, time, summary, discogsRequest = null) {
     const timestamp = new Date().toLocaleTimeString();
-    requestLog.push({ timestamp, method, endpoint, params, status, time, summary });
+    requestLog.push({ timestamp, method, endpoint, params, status, time, summary, discogsRequest });
     updateRequestLogDisplay();
 }
 
@@ -13,15 +13,37 @@ function updateRequestLogDisplay() {
     
     const html = requestLog.map(log => {
         const statusColor = log.status >= 200 && log.status < 300 ? 'text-green-600' : 'text-red-600';
+        
+        let discogsHtml = '';
+        if (log.discogsRequest && log.discogsRequest.request_url) {
+            const url = log.discogsRequest.request_url;
+            const params = log.discogsRequest.params_sent || {};
+            const paramsHtml = Object.entries(params)
+                .map(([k, v]) => `<div class="ml-4 text-purple-600">&${k}=${v}</div>`)
+                .join('');
+            
+            discogsHtml = `
+                <div class="mt-1 ml-4 text-xs bg-gray-100 p-2 rounded border border-gray-300">
+                    <div class="font-semibold text-blue-700">→ ${url.split('?')[0]}</div>
+                    ${paramsHtml}
+                    ${log.discogsRequest.params_sent && log.discogsRequest.params_sent.key !== undefined ? '<div class="ml-4 text-gray-500">&key=[HIDDEN]</div>' : ''}
+                    ${log.discogsRequest.params_sent && log.discogsRequest.params_sent.secret !== undefined ? '<div class="ml-4 text-gray-500">&secret=[HIDDEN]</div>' : ''}
+                </div>
+            `;
+        }
+        
         return `
             <div class="text-xs p-2 border-b border-gray-200 font-mono">
-                <span class="text-gray-500">[${log.timestamp}]</span>
-                <span class="font-semibold">${log.method}</span>
-                <span class="text-blue-600">${log.endpoint}</span>
-                ${log.params ? `<span class="text-purple-600">${log.params}</span>` : ''}
-                → <span class="${statusColor}">${log.status}</span>
-                <span class="text-gray-600">(${log.time}s)</span>
-                ${log.summary ? `<span class="text-gray-700 ml-2">→ ${log.summary}</span>` : ''}
+                <div>
+                    <span class="text-gray-500">[${log.timestamp}]</span>
+                    <span class="font-semibold">${log.method}</span>
+                    <span class="text-blue-600">${log.endpoint}</span>
+                    ${log.params ? `<span class="text-purple-600">${log.params}</span>` : ''}
+                    → <span class="${statusColor}">${log.status}</span>
+                    <span class="text-gray-600">(${log.time}s)</span>
+                    ${log.summary ? `<span class="text-gray-700 ml-2">→ ${log.summary}</span>` : ''}
+                </div>
+                ${discogsHtml}
             </div>
         `;
     }).reverse().join('');
@@ -172,7 +194,7 @@ async function searchDiscogs(artist, album, buttonElement) {
         const endTime = performance.now();
         const elapsed = ((endTime - startTime) / 1000).toFixed(2);
         
-        addRequestLog('GET', `/discogs/search/${artist}/${album}`, '', response.status, elapsed, `${data.total} releases`);
+        addRequestLog('GET', `/discogs/search/${artist}/${album}`, '', response.status, elapsed, `${data.total} releases`, data.discogs_request);
         
         buttonElement.textContent = `✓ Found ${data.total} releases`;
         buttonElement.classList.remove('bg-blue-600', 'hover:bg-blue-700');
@@ -245,7 +267,7 @@ async function getPriceForRelease(releaseId, buttonElement) {
         const url = stats.sell_list_url;
         
         let summary = price ? `€${price.toFixed(2)}, ${forSale} units` : 'No price';
-        addRequestLog('GET', `/discogs/stats/${releaseId}`, '', response.status, elapsed, summary);
+        addRequestLog('GET', `/discogs/stats/${releaseId}`, '', response.status, elapsed, summary, data.discogs_request);
         
         buttonElement.textContent = '✓ Got Price';
         buttonElement.classList.remove('bg-purple-600', 'hover:bg-purple-700');

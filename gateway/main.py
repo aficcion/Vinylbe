@@ -127,9 +127,10 @@ async def search_discogs(artist: str, album: str):
         )
         data = resp.json()
         releases = data.get("releases", [])
+        discogs_debug = data.get("debug_info", {})
         
         # Filter for vinyl only and sort by preference
-        vinyl_releases, debug_info = get_vinyl_releases(releases)
+        vinyl_releases, filter_debug_info = get_vinyl_releases(releases)
         
         elapsed = time.time() - start_time
         log_event("gateway", "INFO", f"Found {len(vinyl_releases)} vinyl releases in {elapsed:.2f}s")
@@ -139,7 +140,8 @@ async def search_discogs(artist: str, album: str):
             "album": album,
             "releases": vinyl_releases,
             "total": len(vinyl_releases),
-            "debug_info": debug_info,
+            "debug_info": filter_debug_info,
+            "discogs_request": discogs_debug,
             "request_time_seconds": round(elapsed, 2)
         }
     
@@ -164,6 +166,7 @@ async def get_discogs_stats(release_id: int):
     try:
         resp = await http_client.get(f"{DISCOGS_SERVICE_URL}/stats/{release_id}")
         stats = resp.json()
+        discogs_debug = stats.pop("debug_info", {})
         
         elapsed = time.time() - start_time
         log_event("gateway", "INFO", f"Got stats for release {release_id} in {elapsed:.2f}s")
@@ -171,6 +174,7 @@ async def get_discogs_stats(release_id: int):
         return {
             "release_id": release_id,
             "stats": stats,
+            "discogs_request": discogs_debug,
             "request_time_seconds": round(elapsed, 2)
         }
     

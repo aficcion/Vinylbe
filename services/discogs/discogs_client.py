@@ -43,6 +43,17 @@ class DiscogsClient:
             "secret": self.secret,
         }
     
+    def _build_debug_url(self, url: str, params: dict) -> str:
+        """Build URL for debugging with credentials hidden"""
+        debug_params = params.copy()
+        if "key" in debug_params:
+            debug_params["key"] = "[HIDDEN]"
+        if "secret" in debug_params:
+            debug_params["secret"] = "[HIDDEN]"
+        
+        query_string = "&".join(f"{k}={v}" for k, v in debug_params.items())
+        return f"{url}?{query_string}"
+    
     async def search_release(self, artist: str, title: str) -> List[dict]:
         if not self.client:
             raise ValueError("Client not started")
@@ -58,14 +69,31 @@ class DiscogsClient:
         
         url = f"{self.api_base}/database/search"
         
+        debug_url = self._build_debug_url(url, params)
+        
         try:
             resp = await self.client.get(url, params=params)
             resp.raise_for_status()
             data = resp.json()
-            return data.get("results", [])
+            results = data.get("results", [])
+            
+            # Return both results and debug info
+            return {
+                "results": results,
+                "debug_info": {
+                    "request_url": debug_url,
+                    "params_sent": {k: v for k, v in params.items() if k not in ["key", "secret"]}
+                }
+            }
         except Exception as e:
             log_event("discogs-client", "ERROR", f"Search failed: {str(e)}")
-            return []
+            return {
+                "results": [],
+                "debug_info": {
+                    "request_url": debug_url,
+                    "error": str(e)
+                }
+            }
     
     async def get_marketplace_stats(self, release_id: int, currency: str = "EUR") -> dict:
         if not self.client:
@@ -75,6 +103,7 @@ class DiscogsClient:
         
         params = self._get_auth_params(currency=currency)
         url = f"{self.api_base}/marketplace/stats/{release_id}"
+        debug_url = self._build_debug_url(url, params)
         
         try:
             resp = await self.client.get(url, params=params)
@@ -101,23 +130,33 @@ class DiscogsClient:
             
             return {
                 "release_id": release_id,
+                "lowest_price_eur": price_in_eur,
                 "lowest_price": price_in_eur,
                 "currency": "EUR",
                 "original_price": source_price,
                 "original_currency": source_currency,
                 "num_for_sale": data.get("num_for_sale", 0),
                 "sell_list_url": sell_list_url,
+                "debug_info": {
+                    "request_url": debug_url,
+                    "params_sent": {k: v for k, v in params.items() if k not in ["key", "secret"]}
+                }
             }
         except Exception as e:
             log_event("discogs-client", "ERROR", f"Stats fetch failed for release {release_id}: {str(e)}")
             return {
                 "release_id": release_id,
+                "lowest_price_eur": None,
                 "lowest_price": None,
                 "currency": "EUR",
                 "original_price": None,
                 "original_currency": None,
                 "num_for_sale": 0,
                 "sell_list_url": f"https://www.discogs.com/sell/list?format=Vinyl&release_id={release_id}",
+                "debug_info": {
+                    "request_url": debug_url,
+                    "error": str(e)
+                }
             }
     
     async def convert_to_eur(self, price: float, from_currency: str) -> float:

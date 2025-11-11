@@ -53,10 +53,12 @@ async def search_release(artist: str = Query(...), title: str = Query(...)):
     
     log_event("discogs-service", "INFO", f"Searching for: {artist} - {title}")
     
-    results = await discogs_client.search_release(artist, title)
+    response = await discogs_client.search_release(artist, title)
+    results = response.get("results", [])
+    debug_info = response.get("debug_info", {})
     
     log_event("discogs-service", "INFO", f"Found {len(results)} results for {artist} - {title}")
-    return {"results": results, "total": len(results)}
+    return {"releases": results, "total": len(results), "debug_info": debug_info}
 
 
 @app.get("/stats/{release_id}")
