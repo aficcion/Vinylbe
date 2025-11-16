@@ -244,8 +244,33 @@ Esto levanta todos los servicios en paralelo:
 - [ ] Persistencia de tokens de Spotify en base de datos
 - [ ] Métricas y observabilidad (Prometheus/Grafana)
 
+## 🚀 Evolución Planificada: Vinilogy v2.0
+
+El sistema actual de microservicios es funcional pero **sin persistencia**. La próxima versión migrará a un **monolito modular con PostgreSQL** como caché inteligente.
+
+### Documentación Técnica
+Ver **`VINILOGY_PLAN.md`** para el plan completo de implementación (v2.0)
+
+### Cambios Principales Planificados
+1. **Base de datos PostgreSQL** como fuente única de verdad
+2. **~10k artistas** precargados con álbumes y TODOS los vinilos
+3. **Cache-miss behavior**: Query DB → si no existe → fetch API → insert → return
+4. **Fuentes múltiples**: Manual seeds + Discogs collection + Last.fm/Spotify listening
+5. **ALL releases**: Guardar TODOS los vinilos de Discogs (250k-500k releases)
+6. **Ingestion jobs**: Scripts para poblar catálogo desde Last.fm/MusicBrainz/Discogs
+7. **Recommender engine**: Scoring basado en escuchas + seeds + disponibilidad/precio
+
+### Estado Actual
+- ✅ Microservicios funcionando en tiempo real
+- ✅ Request Log interactivo completo
+- ⏳ Plan técnico documentado en `VINILOGY_PLAN.md`
+- ⏳ PostgreSQL + schema pendiente de implementación
+- ⏳ Scripts de ingestion pendientes
+
+---
+
 ## Última Actualización
-11 de noviembre de 2025 - **Request Log Mejorado con URLs Completas**
+16 de noviembre de 2025 - **Plan Técnico v2.0 Completo**
 
 ### Cambios Principales:
 - ✅ **NUEVO**: Request Log muestra URLs completas de la API de Discogs
