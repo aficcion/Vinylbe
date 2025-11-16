@@ -24,12 +24,36 @@ localPort = 5000
 externalPort = 80
 
 [[ports]]
-localPort = 8000
-externalPort = 8000
-
-[[ports]]
 localPort = 8081
 externalPort = 8081
 
+[[ports]]
+localPort = 41519
+externalPort = 3003
+
 [agent]
 expertMode = true
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "services"
+
+[[workflows.workflow]]
+name = "services"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python start_services.py"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
