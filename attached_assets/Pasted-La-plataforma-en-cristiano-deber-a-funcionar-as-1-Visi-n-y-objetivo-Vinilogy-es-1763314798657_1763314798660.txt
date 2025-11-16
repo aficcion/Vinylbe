@@ -1,0 +1,491 @@
+La plataforma, en cristiano, debería funcionar así 👇
+
+---
+
+## 1. Visión y objetivo
+
+**Vinilogy** es una plataforma (B2C al principio) que recomienda vinilos a una persona a partir de:
+
+* Sus artistas / discos favoritos (introducidos manualmente).
+* Sus datos de escucha (Last.fm ahora, Spotify u otros en el futuro).
+* La información de catálogo (MusicBrainz, Discogs).
+* Los precios disponibles en tiendas online (eBay, Amazon, tiendas indie…).
+
+La gracia: **no es para descubrir música nueva**, sino para decirte *“de lo que ya te flipa, cuál es el vinilo que tiene más sentido comprar, y a qué precio”*.
+
+---
+
+## 2. Enfoque de arquitectura: monolito modular
+
+Un **único deployable** (por ejemplo, FastAPI + worker + Postgres) pero dividido internamente en módulos bien separados:
+
+* Cada módulo tiene:
+
+  * Su *capa de dominio* (entidades, lógica).
+  * Su *capa de aplicación* (casos de uso).
+  * Sus *adaptadores* (API HTTP, integraciones externas, acceso a datos).
+* No hay microservicios → todo vive en el mismo repo, mismo proceso, misma base de datos, pero **sin mezclar responsabilidades**.
+
+Estructura orientativa:
+
+```text
+/app
+  /core              # shared kernel: config, base models, utils, auth base
+  /modules
+    /identity        # usuarios, login, auth
+    /profiles        # perfil musical del usuario (gustos, seeds, conexiones externas)
+    /catalog         # artistas, álbums, masters, ediciones de vinilo
+    /integrations    # lastfm, musicbrainz, discogs, price providers
+    /recommender     # lógica de recomendación y scoring
+    /prices          # precios, ofertas y disponibilidad
+    /collections     # wantlist, locks, dismissals
+    /ops             # health checks, logs, métricas, tareas admin
+```
+
+---
+
+## 3. Roles y casos de uso
+
+### 3.1. Usuario final (music fan)
+
+Puede:
+
+1. **Registrarse y hacer login** (email + password; OAuth en el futuro).
+2. **Conectar cuentas externas** (Last.fm ahora; Spotify/Discogs después).
+3. **Definir sus gustos**:
+
+   * Buscar artistas mientras escribe (autocompletado).
+   * Ver sugerencias de artistas similares.
+   * Añadir y quitar artistas “semilla”.
+4. **Ver recomendaciones de vinilos**:
+
+   * Lista de 10–20 vinilos recomendados.
+   * Cada vinilo con: portada, artista, título, motivo de recomendación (ej. “lo escuchas muchísimo en los últimos 6 meses”), rating, disponibilidad en vinilo y precios.
+5. **Gestionar sus recomendaciones**:
+
+   * **Lock / “me interesa”** → no se sobreescribe en futuras recomputaciones.
+   * **Dismiss / “no me interesa”** → no vuelve a salir.
+   * **Refrescar recomendaciones** bajo demanda.
+6. **Guardar vinilos** en una wantlist personal.
+
+### 3.2. Admin / owner (tú)
+
+Puede:
+
+* Ver estado de integraciones y cuotas.
+* Ver logs de errores de APIs externas.
+* Activar / desactivar providers de precio.
+* Ejecutar recomputaciones manuales para pruebas.
+* Configurar reglas (máximo de recomendaciones, TTL de recálculo, etc.).
+
+---
+
+## 4. Módulos del monolito y responsabilidades
+
+### 4.1. Módulo `identity` (usuarios y autenticación)
+
+**Responsabilidad**: todo lo relacionado con usuarios y sesiones.
+
+* Entidades:
+
+  * `User(id, email, password_hash, created_at, locale, country, …)`
+  * `Session / RefreshToken` (si hace falta).
+* Casos de uso:
+
+  * `register_user`
+  * `login_user`
+  * `logout`
+* Endpoints:
+
+  * `POST /auth/register`
+  * `POST /auth/login`
+  * `POST /auth/logout`
+* No sabe nada de música, ni de integraciones externas.
+
+---
+
+### 4.2. Módulo `profiles` (perfil musical del usuario)
+
+**Responsabilidad**: entender el **gusto musical** del usuario.
+
+* Entidades:
+
+  * `UserProfile(user_id, lastfm_username, primary_source, last_updated, …)`
+  * `UserSeedArtist(user_id, artist_id, source, added_at)`
+  * `ExternalAccount(user_id, provider, external_id, access_token, refresh_token, …)`
+  * `ListeningSnapshot(user_id, source, period, payload_hash, created_at)`
+* Casos de uso:
+
+  * Conectar Last.fm / Spotify.
+  * Sincronizar datos de escucha (top artists/albums, etc.).
+  * Agregar artistas a mano.
+* Endpoints:
+
+  * `POST /profiles/connect/lastfm`
+  * `GET /profiles/seed-artists`
+  * `POST /profiles/seed-artists`
+  * `DELETE /profiles/seed-artists/{id}`
+
+---
+
+### 4.3. Módulo `catalog` (artistas, álbumes y vinilos)
+
+**Responsabilidad**: representar el **catálogo musical “limpio”**.
+
+* Entidades:
+
+  * `Artist(id, mbid?, name, normalized_name, image_url, …)`
+  * `Album(id, mbid?, artist_id, title, is_studio_album, popularity_score, …)`
+  * `VinylEdition(id, album_id, discogs_master_id?, discogs_release_id?, format, country, year, rating, is_official, …)`
+* Casos de uso:
+
+  * Resolver un artista por nombre o MBID.
+  * Cargar y filtrar álbumes de estudio desde MusicBrainz.
+  * Asociar álbumes a masters / releases de Discogs.
+* Endpoints (internos, normalmente):
+
+  * `GET /catalog/artist/{id}`
+  * `GET /catalog/artist/{id}/albums?studio_only=true`
+  * `GET /catalog/album/{id}/vinyl-editions`
+
+El catálogo es **compartido entre usuarios** y se cachea en base de datos para evitar llamar siempre a las APIs externas.
+
+---
+
+### 4.4. Módulo `integrations` (APIs externas)
+
+**Responsabilidad**: encapsular la lógica de llamada a servicios externos.
+
+Submódulos:
+
+1. `lastfm_client`
+
+   * Métodos:
+
+     * `get_artist_info(name or mbid)` → info + similares.
+     * `get_user_top_albums(username, period)` → top álbumes del usuario.
+   * Maneja:
+
+     * API key y secret.
+     * Retries, rate limiting, timeouts.
+     * Normalización de errores.
+
+2. `musicbrainz_client`
+
+   * Métodos:
+
+     * `search_artist(name)`
+     * `get_artist_albums(mbid, type="Album")`
+   * Filtro de álbums de estudio.
+
+3. `discogs_client`
+
+   * Métodos:
+
+     * `search_master(artist, title)`
+     * `get_master_details(master_id)` (incluye `main_release` y rating).
+     * `get_release_details(release_id)`
+     * `search_releases(artist, title, format="Vinyl")`
+   * Lógica para no disparar 100 llamadas por master con 1.000 releases → límite configurable (p.ej. primeras 10–20 releases, priorizando oficiales/europeas).
+
+4. `price_providers`
+
+   * Interfaz genérica:
+
+     * `search_prices(artist, album, country)` → lista de `PriceQuote`.
+   * Implementaciones:
+
+     * `EbayProvider`
+     * `AmazonProvider`
+     * `IndieStoreProvider` (scraping o APIs privadas).
+   * Maneja:
+
+     * Ubicación del usuario.
+     * Filtros de envío a país.
+
+Este módulo **no sabe de usuarios ni recomendaciones**, solo de cómo hablar con otros servicios.
+
+---
+
+### 4.5. Módulo `prices` (precios y disponibilidad)
+
+**Responsabilidad**: almacenar y servir los **precios** para las ediciones de vinilo.
+
+* Entidades:
+
+  * `PriceQuote(id, vinyl_edition_id, provider, currency, amount, url, shipping_cost, country, valid_from, valid_to)`
+* Casos de uso:
+
+  * Actualizar precios para una `VinylEdition` o un conjunto (batch).
+  * Seleccionar el **mejor precio** por país / región.
+* Endpoints:
+
+  * `GET /prices/vinyl/{vinyl_id}?country=ES` → mejor oferta + alternativas.
+
+---
+
+### 4.6. Módulo `collections` (wantlist, locks y dismissals)
+
+**Responsabilidad**: preferencias por vinilo específico.
+
+* Entidades:
+
+  * `WishlistItem(user_id, vinyl_edition_id, added_at, source)`
+  * `LockedRecommendation(user_id, vinyl_edition_id, locked_at)`
+  * `DismissedRecommendation(user_id, vinyl_edition_id, dismissed_at, reason?)`
+* Casos de uso:
+
+  * Añadir a wantlist.
+  * Marcar como “lock”.
+  * Marcar como “dismissed”.
+* Endpoints:
+
+  * `GET /collections/wishlist`
+  * `POST /collections/wishlist`
+  * `POST /collections/lock`
+  * `POST /collections/dismiss`
+
+---
+
+### 4.7. Módulo `recommender` (motor de recomendaciones)
+
+**Responsabilidad**: generar y servir la lista de vinilos recomendados.
+
+* Entidades:
+
+  * `RecommendationSet(id, user_id, generated_at, source_snapshot_hash, ttl_seconds)`
+  * `RecommendationItem(recommendation_set_id, position, vinyl_edition_id, score, explanation, is_locked, is_dismissed)`
+
+* Lógica principal:
+
+  1. **Entrada**:
+
+     * Seeds del usuario (`UserSeedArtist`).
+     * Datos de escucha (`ListeningSnapshot`).
+  2. **Construcción del “candidate pool”**:
+
+     * Artistas más escuchados + artistas semilla.
+     * Para cada artista, recuperar álbumes de estudio (`catalog`).
+  3. **Filtrado y enriquecimiento**:
+
+     * Excluir: singles, compilaciones, directos (según flags de `Album`).
+     * Solo álbumes con **al menos una edición en vinilo** (vía `catalog` + `discogs`).
+  4. **Scoring** (simplificado, pero configurable):
+
+     * Puntos por frecuencia de escucha (Last.fm).
+     * Ponderación suave por periodo (más reciente pesa un poco más).
+     * Extra por número de temas del álbum que escucha.
+     * Penalización si ya está en wantlist.
+  5. **Selección**:
+
+     * Ordenar por score.
+     * Quitar los que están en `DismissedRecommendation`.
+     * Respetar los `LockedRecommendation` (se mantienen en la lista).
+     * Limitar a N (ej. 20) resultados.
+  6. **Persistencia**:
+
+     * Guardar un `RecommendationSet` por usuario.
+     * Reutilizar el último set si:
+
+       * No ha cambiado el snapshot de escucha/semillas.
+       * No ha expirado el TTL.
+     * Si hay cambios → generar un nuevo set.
+
+* Endpoints:
+
+  * `GET /recs` → devuelve el último set (y, si está caducado, dispara recálculo en background).
+  * `POST /recs/refresh` → fuerza recálculo (para testing).
+
+---
+
+### 4.8. Módulo `ops` (operaciones y observabilidad)
+
+**Responsabilidad**: salud del sistema, jobs, trazabilidad.
+
+* Entidades:
+
+  * `JobRun(id, job_name, status, started_at, finished_at, error_message)`
+* Casos de uso:
+
+  * Cron jobs para refrescar catálogos, precios y recomendaciones.
+  * Health checks de integraciones.
+* Endpoints:
+
+  * `GET /ops/health`
+  * `GET /ops/jobs`
+
+---
+
+## 5. Flujos clave
+
+### 5.1. Registro y primer acceso
+
+1. Usuario se registra (`identity`).
+2. Se crea un `UserProfile` vacío (`profiles`).
+3. Se muestra una pantalla de **onboarding**:
+
+   * Opción A: conectar Last.fm.
+   * Opción B: añadir artistas a mano.
+4. Al terminar el onboarding, se dispara un proceso inicial:
+
+   * Sincronizar datos de escucha (si hay Last.fm).
+   * Obtener artistas seeds.
+   * Construir primeras recomendaciones (`recommender`).
+
+---
+
+### 5.2. Búsqueda y selección de artistas (UI tipo “typeahead”)
+
+1. En el frontend, el usuario empieza a escribir “Arctic Monkeys”.
+2. Front llama a `GET /search/artists?q=arcti`.
+3. Backend:
+
+   * Usa el caché local (tabla `Artist`) para sugerencias rápidas.
+   * Si no hay suficiente, llama a `lastfm_client.get_artist_info` o `search_artist`.
+   * Normaliza y guarda nuevos artistas en `catalog`.
+4. La respuesta incluye:
+
+   * Artistas coincidentes directos.
+   * Artistas similares (si se solicita).
+5. Al seleccionar un artista, se crea `UserSeedArtist`.
+
+---
+
+### 5.3. Generación de recomendaciones al entrar en “Recs”
+
+1. Front llama a `GET /recs`.
+2. Backend (`recommender`) hace:
+
+   * Busca el último `RecommendationSet` del usuario.
+   * Comprueba:
+
+     * ¿Han cambiado seeds o listening snapshots desde entonces?
+     * ¿Está expirado el TTL (ej. 24h)?
+   * Si **NO** → devuelve el set existente → respuesta rápida.
+   * Si **SÍ**:
+
+     * Lanza recomputación:
+
+       * Puede ser **sincrónica** (si quieres simplicidad) o:
+       * **Asíncrona** con worker y devolver el set antiguo mientras se recalcula.
+3. Resultado:
+
+   * Lista de `RecommendationItem` con:
+
+     * Datos del vinilo (vía `catalog` + `prices`).
+     * Bandera `is_locked`, `is_dismissed` (para front).
+     * Explicación simple (“top album para ti en los últimos 12 meses”, etc.).
+
+---
+
+### 5.4. Lock y dismiss
+
+* **Lock**:
+
+  * `POST /collections/lock` con `vinyl_edition_id`.
+  * `recommender` siempre asegura que ese ítem:
+
+    * Aparece en el top de la lista mientras haya hueco.
+    * No se borra en nuevas versiones de `RecommendationSet`.
+
+* **Dismiss**:
+
+  * `POST /collections/dismiss` con `vinyl_edition_id`.
+  * `recommender` excluye permanentemente ese vinilo para el usuario (salvo que se limpie manualmente).
+
+---
+
+### 5.5. Wantlist
+
+* `POST /collections/wishlist` añade un vinilo.
+* Aparece en:
+
+  * Vista de wantlist.
+  * Posibles integraciones futuras (exportar a Discogs, etc.).
+
+---
+
+## 6. Corner cases a tener en cuenta
+
+1. **Usuario sin datos externos ni artistas**:
+
+   * Mostrar una pantalla neutra: “Añade al menos 3 artistas para empezar”.
+   * No llamar a APIs externas hasta que haya input.
+
+2. **Artista sin álbumes de estudio en MB**:
+
+   * Fallback:
+
+     * Buscar por nombre en vez de MBID.
+     * Permitir algunos releases marcados como “Album” pero sin primary type.
+   * Si aún así no hay → explicar “No encontramos álbumes de estudio” y sugerir otros.
+
+3. **Álbum sin edición en vinilo**:
+
+   * Se excluye del candidate pool.
+   * Opcional: guardar un flag para evitar reconsultarlo durante un tiempo.
+
+4. **Masters con cientos de releases en Discogs**:
+
+   * Limitar el nº de releases consultados (ej. 15–20).
+   * Priorizar:
+
+     * Oficiales.
+     * Región del usuario (ES/UE).
+     * Año original o reissue relevante.
+   * Evitar loops y saturar la API.
+
+5. **Errores de API / rate limits**:
+
+   * Devolver recomendaciones basadas en datos ya cacheados.
+   * Loggear el error con detalle (módulo `ops`).
+   * Mostrar mensaje suave al usuario si no se pueden actualizar precios.
+
+6. **Precios no disponibles**:
+
+   * Mostrar el vinilo igualmente pero sin precio (“precio no disponible ahora mismo”).
+   * No bloquear la recomendación por no tener precio.
+
+---
+
+## 7. Requisitos no funcionales (alto nivel)
+
+* **Persistencia**:
+
+  * Postgres (u otra relacional).
+  * Migraciones versionadas.
+* **Observabilidad**:
+
+  * Logs estructurados por módulo.
+  * Métricas básicas: tiempo medio de recálculo, errores de integraciones, etc.
+* **Configuración**:
+
+  * Variables de entorno para API keys y secrets.
+  * Config por entorno (dev, staging, prod).
+* **Multi-idioma**:
+
+  * Backend neutro, frontend con i18n (ES/EN).
+* **Seguridad**:
+
+  * JWT o cookies seguras.
+  * Rate limiting por IP/usuario para endpoints sensibles.
+* **Escalabilidad**:
+
+  * Escalado vertical/ horizontal del monolito.
+  * Workers separados para tareas pesadas (recs masivos, scrapers de precios).
+
+---
+
+## 8. Resumen rápido
+
+* **Monolito modular** → un solo servicio, muchos módulos con responsabilidades claras.
+* Módulos clave: `identity`, `profiles`, `catalog`, `integrations`, `prices`, `collections`, `recommender`, `ops`.
+* Recomendaciones:
+
+  * Se basan en datos de escucha + artistas semilla.
+  * Solo consideran álbumes de estudio con edición en vinilo.
+  * Se recalculan cuando cambia la entrada o expira el TTL.
+  * Respetan locks, dismiss y wantlist.
+* Integraciones externas están completamente encapsuladas en un módulo específico para no contaminar el dominio.
+
+Si quieres, en el siguiente paso puedo bajar un poco más al detalle en **modelos de datos** (tablas principales) y en un **diagrama de flujo** concreto para el endpoint `/recs`.
