@@ -1,21 +1,11 @@
-entrypoint = "main.py"
+run = "python start_services.py"
 modules = ["python-3.11"]
 
-[nix]
-channel = "stable-25_05"
-
-[unitTest]
-language = "python3"
-
-[gitHubImport]
-requiredFiles = [".replit", "replit.nix"]
-
 [deployment]
-run = ["python3", "main.py"]
-deploymentTarget = "cloudrun"
+run = "python start_services.py"
 
-[agent]
-expertMode = true
+[nix]
+packages = ["glibcLocales"]
 
 [[ports]]
 localPort = 3000
@@ -34,33 +24,12 @@ localPort = 5000
 externalPort = 80
 
 [[ports]]
-localPort = 33273
-externalPort = 4200
+localPort = 8000
+externalPort = 8000
 
 [[ports]]
-localPort = 39203
-externalPort = 3003
+localPort = 8081
+externalPort = 8081
 
-[workflows]
-runButton = "Project"
-
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "services"
-
-[[workflows.workflow]]
-name = "services"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python start_services.py"
-waitForPort = 5000
-
-[workflows.workflow.metadata]
-outputType = "webview"
+[agent]
+expertMode = true
