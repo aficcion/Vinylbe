@@ -6,6 +6,8 @@ EBAY_OAUTH_URL = "https://api.ebay.com/identity/v1/oauth2/token"
 EBAY_BROWSE_URL = "https://api.ebay.com/buy/browse/v1/item_summary/search"
 VINYL_CATEGORY_ID = "176985"
 
+EU_COUNTRIES = "AT,BE,BG,HR,CY,CZ,DK,EE,FI,FR,DE,GR,HU,IE,IT,LV,LT,LU,MT,NL,PL,PT,RO,SK,SI,ES,SE"
+
 
 def normalize(text: str) -> str:
     """Normaliza strings para comparaciones simples."""
@@ -139,12 +141,11 @@ class PricingClient:
         self,
         artist: str,
         album: str,
-        country: str = "ES",
         marketplace_id: str = "EBAY_ES",
     ) -> Optional[Dict[str, Any]]:
         """
         Busca en eBay el vinilo de artist + album y devuelve la mejor oferta
-        (precio más barato en EUR que se envíe al país indicado).
+        (precio más barato en EUR ubicado en la Unión Europea).
         """
         if not self.access_token:
             await self._get_access_token()
@@ -153,7 +154,7 @@ class PricingClient:
         params = {
             "q": query,
             "category_ids": VINYL_CATEGORY_ID,
-            "filter": f"deliveryCountry:{country}",
+            "filter": f"itemLocationCountry:{EU_COUNTRIES}",
             "sort": "priceWithShipping",
             "limit": "20",
         }
