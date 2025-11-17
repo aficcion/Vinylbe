@@ -428,7 +428,7 @@ async def enrich_album_with_discogs(album: dict, idx: int, total: int, semaphore
                         "release_id": release_id,
                         "lowest_price_eur": None,
                         "num_for_sale": 0,
-                        "sell_list_url": f"https://www.discogs.com/sell/list?format=Vinyl&release_id={release_id}"
+                        "sell_list_url": f"https://www.discogs.com/sell/list?release_id={release_id}&currency=EUR&format=Vinyl"
                     }
             
             album["discogs_release"] = selected_release
