@@ -101,6 +101,9 @@ class DiscogsClient:
         
         await self._rate_limit()
         
+        # First, get the release details to extract master_id
+        master_id = await self._get_master_id_from_release(release_id)
+        
         params = self._get_auth_params(currency=currency)
         url = f"{self.api_base}/marketplace/stats/{release_id}"
         debug_url = self._build_debug_url(url, params)
@@ -110,7 +113,12 @@ class DiscogsClient:
             resp.raise_for_status()
             data = resp.json()
             
-            sell_list_url = f"https://www.discogs.com/sell/list?format=Vinyl&release_id={release_id}"
+            # Use master_id in the sell list URL as per user's specification
+            if master_id:
+                sell_list_url = f"https://www.discogs.com/sell/list?master_id={master_id}&currency=EUR&format=Vinyl"
+            else:
+                # Fallback to release_id if master_id not found
+                sell_list_url = f"https://www.discogs.com/sell/list?release_id={release_id}&currency=EUR&format=Vinyl"
             
             lowest_price_data = data.get("lowest_price")
             
@@ -144,6 +152,13 @@ class DiscogsClient:
             }
         except Exception as e:
             log_event("discogs-client", "ERROR", f"Stats fetch failed for release {release_id}: {str(e)}")
+            
+            # Use master_id in error case too if available
+            if master_id:
+                sell_list_url = f"https://www.discogs.com/sell/list?master_id={master_id}&currency=EUR&format=Vinyl"
+            else:
+                sell_list_url = f"https://www.discogs.com/sell/list?release_id={release_id}&currency=EUR&format=Vinyl"
+            
             return {
                 "release_id": release_id,
                 "lowest_price_eur": None,
@@ -152,12 +167,34 @@ class DiscogsClient:
                 "original_price": None,
                 "original_currency": None,
                 "num_for_sale": 0,
-                "sell_list_url": f"https://www.discogs.com/sell/list?format=Vinyl&release_id={release_id}",
+                "sell_list_url": sell_list_url,
                 "debug_info": {
                     "request_url": debug_url,
                     "error": str(e)
                 }
             }
+    
+    async def _get_master_id_from_release(self, release_id: int) -> Optional[int]:
+        """Get the master_id from a release_id by fetching release details"""
+        if not self.client:
+            return None
+        
+        try:
+            await self._rate_limit()
+            params = self._get_auth_params()
+            url = f"{self.api_base}/releases/{release_id}"
+            
+            resp = await self.client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            
+            master_id = data.get("master_id")
+            if master_id:
+                log_event("discogs-client", "INFO", f"Found master_id {master_id} for release {release_id}")
+            return master_id
+        except Exception as e:
+            log_event("discogs-client", "WARNING", f"Could not get master_id for release {release_id}: {str(e)}")
+            return None
     
     async def convert_to_eur(self, price: float, from_currency: str) -> float:
         """Convert price from source currency to EUR using current exchange rates (Nov 2025)"""
