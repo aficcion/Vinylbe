@@ -247,6 +247,123 @@ function displayReleases(container, releases) {
     container.classList.remove('hidden');
 }
 
+async function getPricing(artist, album, buttonElement) {
+    const albumCard = buttonElement.closest('.album-card');
+    const pricingDiv = albumCard.querySelector('.pricing-info');
+    
+    buttonElement.disabled = true;
+    buttonElement.textContent = 'Loading prices...';
+    
+    try {
+        const startTime = performance.now();
+        const response = await fetch(`/album-pricing/${encodeURIComponent(artist)}/${encodeURIComponent(album)}`);
+        const data = await response.json();
+        const endTime = performance.now();
+        const elapsed = ((endTime - startTime) / 1000).toFixed(2);
+        
+        const ebayOffer = data.ebay_offer;
+        const discogsUrl = data.discogs_master_url;
+        const localStores = data.local_stores || {};
+        
+        let summary = `${elapsed}s - Discogs: ${discogsUrl ? 'found' : 'not found'}, eBay: ${ebayOffer ? 'found' : 'not found'}`;
+        addRequestLog('GET', `/album-pricing/${artist}/${album}`, '', response.status, elapsed, summary, data.debug_info?.discogs);
+        
+        buttonElement.textContent = '✓ Prices Loaded';
+        buttonElement.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+        buttonElement.classList.add('bg-green-600');
+        
+        let html = '<div class="space-y-3">';
+        
+        if (discogsUrl) {
+            html += `
+                <div class="bg-blue-50 border border-blue-200 rounded p-3">
+                    <div class="text-sm font-semibold text-blue-900 mb-2">🎵 Discogs Master</div>
+                    <a href="${discogsUrl}" target="_blank" class="block text-center bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-2 rounded">
+                        View on Discogs
+                    </a>
+                </div>
+            `;
+        }
+        
+        if (ebayOffer) {
+            const price = ebayOffer.total_price;
+            const itemPrice = ebayOffer.item_price;
+            const shipping = ebayOffer.shipping_cost;
+            const currency = ebayOffer.currency;
+            const url = ebayOffer.url;
+            
+            html += `
+                <div class="bg-green-50 border border-green-200 rounded p-3">
+                    <div class="text-sm font-semibold text-green-900 mb-2">💳 Best eBay Offer</div>
+                    <div class="text-xs text-gray-700 mb-2">
+                        <div>Item: ${itemPrice} ${currency}</div>
+                        <div>Shipping: ${shipping} ${currency}</div>
+                        <div class="font-bold mt-1 text-lg text-green-700">Total: ${price} ${currency}</div>
+                    </div>
+                    <a href="${url}" target="_blank" class="block text-center bg-green-600 hover:bg-green-700 text-white text-sm px-3 py-2 rounded">
+                        Buy on eBay
+                    </a>
+                </div>
+            `;
+        } else {
+            html += `
+                <div class="bg-yellow-50 border border-yellow-200 rounded p-3">
+                    <div class="text-sm font-semibold text-yellow-900 mb-1">💳 eBay</div>
+                    <div class="text-xs text-yellow-800">No suitable vinyl offer found on eBay</div>
+                </div>
+            `;
+        }
+        
+        if (Object.keys(localStores).length > 0) {
+            html += `
+                <div class="bg-purple-50 border border-purple-200 rounded p-3">
+                    <div class="text-sm font-semibold text-purple-900 mb-2">🏪 Tiendas Locales</div>
+                    <div class="grid grid-cols-2 gap-2">
+            `;
+            
+            const storeNames = {
+                'marilians': 'Marilians',
+                'bajo_el_volcan': 'Bajo el Volcán',
+                'bora_bora': 'Bora Bora',
+                'revolver': 'Revolver'
+            };
+            
+            for (const [key, url] of Object.entries(localStores)) {
+                const name = storeNames[key] || key;
+                html += `
+                    <a href="${url}" target="_blank" class="text-xs bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded text-center">
+                        ${name}
+                    </a>
+                `;
+            }
+            
+            html += `
+                    </div>
+                </div>
+            `;
+        }
+        
+        html += '</div>';
+        
+        pricingDiv.innerHTML = html;
+        pricingDiv.classList.remove('hidden');
+        
+    } catch (error) {
+        buttonElement.textContent = 'Error - Try Again';
+        buttonElement.disabled = false;
+        buttonElement.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+        buttonElement.classList.add('bg-red-600');
+        addRequestLog('GET', `/album-pricing/${artist}/${album}`, '', 500, '0', `Error: ${error.message}`);
+        
+        pricingDiv.innerHTML = `
+            <div class="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-800">
+                Error loading prices: ${error.message}
+            </div>
+        `;
+        pricingDiv.classList.remove('hidden');
+    }
+}
+
 async function getPriceForRelease(releaseId, buttonElement) {
     const releaseItem = buttonElement.closest('.release-item');
     const priceDiv = releaseItem.querySelector('.price-info');
@@ -355,10 +472,17 @@ function displayResults(albums, stats, totalTime) {
                     
                     <div class="border-t pt-3 mt-3">
                         <button 
-                            onclick="searchDiscogs('${artistName.replace(/'/g, "\\'")}', '${albumName.replace(/'/g, "\\'")}', this)"
-                            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded mb-2"
+                            onclick="getPricing('${artistName.replace(/'/g, "\\'")}', '${albumName.replace(/'/g, "\\'")}', this)"
+                            class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded mb-2"
                         >
-                            🔍 Search Discogs
+                            💰 Get Prices
+                        </button>
+                        <div class="pricing-info hidden mt-3"></div>
+                        <button 
+                            onclick="searchDiscogs('${artistName.replace(/'/g, "\\'")}', '${albumName.replace(/'/g, "\\'")}', this)"
+                            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded mb-2 mt-2"
+                        >
+                            🔍 Search Discogs Releases
                         </button>
                         <div class="discogs-releases hidden mt-3"></div>
                     </div>

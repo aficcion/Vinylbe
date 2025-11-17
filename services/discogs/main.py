@@ -79,3 +79,20 @@ async def get_sell_list_url(release_id: int):
     url = f"https://www.discogs.com/sell/list?format=Vinyl&release_id={release_id}"
     log_event("discogs-service", "INFO", f"Generated sell list URL for release {release_id}")
     return {"release_id": release_id, "url": url}
+
+
+@app.get("/master-link/{artist}/{album}")
+async def get_master_link(artist: str, album: str):
+    if not discogs_client:
+        raise HTTPException(status_code=500, detail="Discogs client not initialized")
+    
+    log_event("discogs-service", "INFO", f"Fetching master link for: {artist} - {album}")
+    
+    result = await discogs_client.get_master_link(artist, album)
+    
+    if result.get("master_id"):
+        log_event("discogs-service", "INFO", f"Master found for {artist} - {album}: {result['master_id']}")
+    else:
+        log_event("discogs-service", "INFO", f"No master found for {artist} - {album}")
+    
+    return result

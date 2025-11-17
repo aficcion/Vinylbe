@@ -174,3 +174,75 @@ class DiscogsClient:
         
         rate = conversion_rates.get(from_currency, 1.0)
         return price * rate
+    
+    async def get_master_link(self, artist: str, album: str) -> Optional[Dict]:
+        """
+        Busca el master ID de un álbum en Discogs y retorna el link al master.
+        """
+        if not self.client:
+            raise ValueError("Client not started")
+        
+        await self._rate_limit()
+        
+        params = self._get_auth_params(
+            artist=artist,
+            release_title=album,
+            type="master",
+        )
+        
+        url = f"{self.api_base}/database/search"
+        debug_url = self._build_debug_url(url, params)
+        
+        try:
+            resp = await self.client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            results = data.get("results", [])
+            
+            if not results:
+                return {
+                    "master_id": None,
+                    "master_url": None,
+                    "message": "No master found",
+                    "debug_info": {
+                        "request_url": debug_url,
+                        "params_sent": {k: v for k, v in params.items() if k not in ["key", "secret"]}
+                    }
+                }
+            
+            first_result = results[0]
+            master_id = first_result.get("master_id") or first_result.get("id")
+            
+            if not master_id:
+                return {
+                    "master_id": None,
+                    "master_url": None,
+                    "message": "No master ID found in results",
+                    "debug_info": {
+                        "request_url": debug_url,
+                        "params_sent": {k: v for k, v in params.items() if k not in ["key", "secret"]}
+                    }
+                }
+            
+            master_url = f"https://www.discogs.com/master/{master_id}"
+            
+            return {
+                "master_id": master_id,
+                "master_url": master_url,
+                "title": first_result.get("title", ""),
+                "debug_info": {
+                    "request_url": debug_url,
+                    "params_sent": {k: v for k, v in params.items() if k not in ["key", "secret"]}
+                }
+            }
+        except Exception as e:
+            log_event("discogs-client", "ERROR", f"Master link fetch failed: {str(e)}")
+            return {
+                "master_id": None,
+                "master_url": None,
+                "message": f"Error: {str(e)}",
+                "debug_info": {
+                    "request_url": debug_url,
+                    "error": str(e)
+                }
+            }

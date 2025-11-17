@@ -18,6 +18,7 @@ from libs.shared.utils import log_event
 SPOTIFY_SERVICE_URL = os.getenv("SPOTIFY_SERVICE_URL", "http://localhost:3000")
 DISCOGS_SERVICE_URL = os.getenv("DISCOGS_SERVICE_URL", "http://localhost:3001")
 RECOMMENDER_SERVICE_URL = os.getenv("RECOMMENDER_SERVICE_URL", "http://localhost:3002")
+PRICING_SERVICE_URL = os.getenv("PRICING_SERVICE_URL", "http://localhost:3003")
 
 http_client: httpx.AsyncClient | None = None
 
@@ -63,6 +64,7 @@ async def health_check():
         ("spotify", SPOTIFY_SERVICE_URL),
         ("discogs", DISCOGS_SERVICE_URL),
         ("recommender", RECOMMENDER_SERVICE_URL),
+        ("pricing", PRICING_SERVICE_URL),
     ]:
         try:
             resp = await http_client.get(f"{service_url}/health", timeout=5.0)
@@ -184,6 +186,81 @@ async def get_discogs_stats(release_id: int):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to get stats: {str(e)}"
+        )
+
+
+@app.get("/album-pricing/{artist}/{album}")
+async def get_album_pricing(artist: str, album: str):
+    """
+    Get complete pricing information for an album with maximum speed optimization.
+    Fetches in parallel:
+    - Discogs master link
+    - eBay best price
+    - Local store links
+    
+    Returns all data in 1-2 seconds thanks to asyncio.gather parallelization.
+    """
+    if not http_client:
+        raise HTTPException(status_code=500, detail="HTTP client not initialized")
+    
+    start_time = time.time()
+    log_event("gateway", "INFO", f"Getting pricing for: {artist} - {album}")
+    
+    try:
+        # Parallel execution of all 3 requests using asyncio.gather
+        discogs_task = http_client.get(f"{DISCOGS_SERVICE_URL}/master-link/{artist}/{album}")
+        ebay_task = http_client.get(f"{PRICING_SERVICE_URL}/ebay-price/{artist}/{album}")
+        stores_task = http_client.get(f"{PRICING_SERVICE_URL}/local-stores/{artist}/{album}")
+        
+        discogs_resp, ebay_resp, stores_resp = await asyncio.gather(
+            discogs_task, ebay_task, stores_task, return_exceptions=True
+        )
+        
+        # Parse Discogs response
+        if isinstance(discogs_resp, Exception):
+            log_event("gateway", "WARNING", f"Discogs master link failed: {str(discogs_resp)}")
+            discogs_data = {"master_id": None, "master_url": None, "message": str(discogs_resp)}
+        else:
+            discogs_data = discogs_resp.json()
+        
+        # Parse eBay response
+        if isinstance(ebay_resp, Exception):
+            log_event("gateway", "WARNING", f"eBay pricing failed: {str(ebay_resp)}")
+            ebay_data = {"offer": None, "message": str(ebay_resp)}
+        else:
+            ebay_data = ebay_resp.json()
+        
+        # Parse local stores response
+        if isinstance(stores_resp, Exception):
+            log_event("gateway", "WARNING", f"Local stores failed: {str(stores_resp)}")
+            stores_data = {"stores": {}}
+        else:
+            stores_data = stores_resp.json()
+        
+        elapsed = time.time() - start_time
+        log_event("gateway", "INFO", f"Pricing fetched for {artist} - {album} in {elapsed:.2f}s")
+        
+        return {
+            "artist": artist,
+            "album": album,
+            "discogs_master_url": discogs_data.get("master_url"),
+            "discogs_master_id": discogs_data.get("master_id"),
+            "discogs_title": discogs_data.get("title"),
+            "ebay_offer": ebay_data.get("offer"),
+            "local_stores": stores_data.get("stores", {}),
+            "request_time_seconds": round(elapsed, 2),
+            "debug_info": {
+                "discogs": discogs_data.get("debug_info"),
+                "parallelization": "3 concurrent requests (Discogs + eBay + Local Stores)"
+            }
+        }
+    
+    except Exception as e:
+        elapsed = time.time() - start_time
+        log_event("gateway", "ERROR", f"Album pricing failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get album pricing: {str(e)}"
         )
 
 
