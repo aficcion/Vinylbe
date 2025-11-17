@@ -113,82 +113,6 @@ async def spotify_callback_alias(code: str):
     return await spotify_callback(code)
 
 
-@app.get("/discogs/search/{artist}/{album}")
-async def search_discogs(artist: str, album: str):
-    """Search for vinyl releases on Discogs for a specific artist/album"""
-    if not http_client:
-        raise HTTPException(status_code=500, detail="HTTP client not initialized")
-    
-    start_time = time.time()
-    log_event("gateway", "INFO", f"Searching Discogs: {artist} - {album}")
-    
-    try:
-        resp = await http_client.get(
-            f"{DISCOGS_SERVICE_URL}/search",
-            params={"artist": artist, "title": album}
-        )
-        data = resp.json()
-        releases = data.get("releases", [])
-        discogs_debug = data.get("debug_info", {})
-        
-        # Filter for vinyl only and sort by preference
-        vinyl_releases, filter_debug_info = get_vinyl_releases(releases)
-        
-        elapsed = time.time() - start_time
-        log_event("gateway", "INFO", f"Found {len(vinyl_releases)} vinyl releases in {elapsed:.2f}s")
-        
-        return {
-            "artist": artist,
-            "album": album,
-            "releases": vinyl_releases,
-            "total": len(vinyl_releases),
-            "debug_info": filter_debug_info,
-            "discogs_request": discogs_debug,
-            "request_time_seconds": round(elapsed, 2)
-        }
-    
-    except Exception as e:
-        elapsed = time.time() - start_time
-        log_event("gateway", "ERROR", f"Discogs search failed: {str(e)}")
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Discogs search failed: {str(e)}"
-        )
-
-
-@app.get("/discogs/stats/{release_id}")
-async def get_discogs_stats(release_id: int):
-    """Get marketplace stats (price, availability) for a specific Discogs release"""
-    if not http_client:
-        raise HTTPException(status_code=500, detail="HTTP client not initialized")
-    
-    start_time = time.time()
-    log_event("gateway", "INFO", f"Getting stats for release {release_id}")
-    
-    try:
-        resp = await http_client.get(f"{DISCOGS_SERVICE_URL}/stats/{release_id}")
-        stats = resp.json()
-        discogs_debug = stats.pop("debug_info", {})
-        
-        elapsed = time.time() - start_time
-        log_event("gateway", "INFO", f"Got stats for release {release_id} in {elapsed:.2f}s")
-        
-        return {
-            "release_id": release_id,
-            "stats": stats,
-            "discogs_request": discogs_debug,
-            "request_time_seconds": round(elapsed, 2)
-        }
-    
-    except Exception as e:
-        elapsed = time.time() - start_time
-        log_event("gateway", "ERROR", f"Failed to get stats for release {release_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to get stats: {str(e)}"
-        )
-
-
 @app.get("/album-pricing/{artist}/{album}")
 async def get_album_pricing(artist: str, album: str):
     """
@@ -240,11 +164,18 @@ async def get_album_pricing(artist: str, album: str):
         elapsed = time.time() - start_time
         log_event("gateway", "INFO", f"Pricing fetched for {artist} - {album} in {elapsed:.2f}s")
         
+        # Generate sell list URL with master_id
+        master_id = discogs_data.get("master_id")
+        discogs_sell_url = None
+        if master_id:
+            discogs_sell_url = f"https://www.discogs.com/sell/list?master_id={master_id}&currency=EUR&format=Vinyl"
+        
         return {
             "artist": artist,
             "album": album,
             "discogs_master_url": discogs_data.get("master_url"),
-            "discogs_master_id": discogs_data.get("master_id"),
+            "discogs_master_id": master_id,
+            "discogs_sell_url": discogs_sell_url,
             "discogs_title": discogs_data.get("title"),
             "ebay_offer": ebay_data.get("offer"),
             "local_stores": stores_data.get("stores", {}),
