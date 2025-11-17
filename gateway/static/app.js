@@ -179,73 +179,6 @@ function updateStepStatus(stepId, status) {
     circle.className = `inline-block w-6 h-6 rounded-full ${colorMap[status]} mr-3`;
 }
 
-// Discogs Interactive Search
-async function searchDiscogs(artist, album, buttonElement) {
-    const albumCard = buttonElement.closest('.album-card');
-    const releasesDiv = albumCard.querySelector('.discogs-releases');
-    
-    buttonElement.disabled = true;
-    buttonElement.textContent = 'Searching...';
-    
-    try {
-        const startTime = performance.now();
-        const response = await fetch(`/discogs/search/${encodeURIComponent(artist)}/${encodeURIComponent(album)}`);
-        const data = await response.json();
-        const endTime = performance.now();
-        const elapsed = ((endTime - startTime) / 1000).toFixed(2);
-        
-        addRequestLog('GET', `/discogs/search/${artist}/${album}`, '', response.status, elapsed, `${data.total} releases`, data.discogs_request);
-        
-        buttonElement.textContent = `✓ Found ${data.total} releases`;
-        buttonElement.classList.remove('bg-blue-600', 'hover:bg-blue-700');
-        buttonElement.classList.add('bg-green-600');
-        
-        displayReleases(releasesDiv, data.releases);
-        
-    } catch (error) {
-        buttonElement.textContent = 'Error - Try Again';
-        buttonElement.disabled = false;
-        buttonElement.classList.add('bg-red-600');
-        addRequestLog('GET', `/discogs/search/${artist}/${album}`, '', 500, '0', `Error: ${error.message}`);
-    }
-}
-
-function displayReleases(container, releases) {
-    if (!releases || releases.length === 0) {
-        container.innerHTML = '<div class="text-sm text-gray-500 p-2">No vinyl releases found</div>';
-        container.classList.remove('hidden');
-        return;
-    }
-    
-    const html = releases.map((release, idx) => {
-        const releaseId = release.id;
-        const title = release.title || 'Unknown';
-        const year = release.year || 'N/A';
-        const format = Array.isArray(release.format) ? release.format.join(', ') : release.format || 'Vinyl';
-        const label = release.label ? release.label.join(', ') : 'Unknown Label';
-        
-        return `
-            <div class="border border-gray-300 rounded p-3 mb-2 release-item" data-release-id="${releaseId}">
-                <div class="flex justify-between items-start mb-2">
-                    <div class="flex-1">
-                        <div class="font-semibold text-sm">#${idx + 1} - ${title}</div>
-                        <div class="text-xs text-gray-600">${format} · ${year} · ${label}</div>
-                    </div>
-                    <button 
-                        onclick="getPriceForRelease(${releaseId}, this)"
-                        class="ml-2 bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-1 rounded"
-                    >
-                        Get Price
-                    </button>
-                </div>
-                <div class="price-info hidden mt-2"></div>
-            </div>
-        `;
-    }).join('');
-    
-    container.innerHTML = html;
-    container.classList.remove('hidden');
-}
 
 async function getPricing(artist, album, buttonElement) {
     const albumCard = buttonElement.closest('.album-card');
@@ -262,10 +195,10 @@ async function getPricing(artist, album, buttonElement) {
         const elapsed = ((endTime - startTime) / 1000).toFixed(2);
         
         const ebayOffer = data.ebay_offer;
-        const discogsUrl = data.discogs_master_url;
+        const discogsSellUrl = data.discogs_sell_url;
         const localStores = data.local_stores || {};
         
-        let summary = `${elapsed}s - Discogs: ${discogsUrl ? 'found' : 'not found'}, eBay: ${ebayOffer ? 'found' : 'not found'}`;
+        let summary = `${elapsed}s - Discogs: ${discogsSellUrl ? 'found' : 'not found'}, eBay: ${ebayOffer ? 'found' : 'not found'}`;
         addRequestLog('GET', `/album-pricing/${artist}/${album}`, '', response.status, elapsed, summary, data.debug_info?.discogs);
         
         buttonElement.textContent = '✓ Prices Loaded';
@@ -274,12 +207,12 @@ async function getPricing(artist, album, buttonElement) {
         
         let html = '<div class="space-y-3">';
         
-        if (discogsUrl) {
+        if (discogsSellUrl) {
             html += `
                 <div class="bg-blue-50 border border-blue-200 rounded p-3">
-                    <div class="text-sm font-semibold text-blue-900 mb-2">🎵 Discogs Master</div>
-                    <a href="${discogsUrl}" target="_blank" class="block text-center bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-2 rounded">
-                        View on Discogs
+                    <div class="text-sm font-semibold text-blue-900 mb-2">🎵 Discogs Vinyl</div>
+                    <a href="${discogsSellUrl}" target="_blank" class="block text-center bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-2 rounded">
+                        Ver en Discogs
                     </a>
                 </div>
             `;
@@ -364,62 +297,6 @@ async function getPricing(artist, album, buttonElement) {
     }
 }
 
-async function getPriceForRelease(releaseId, buttonElement) {
-    const releaseItem = buttonElement.closest('.release-item');
-    const priceDiv = releaseItem.querySelector('.price-info');
-    
-    buttonElement.disabled = true;
-    buttonElement.textContent = 'Loading...';
-    
-    try {
-        const startTime = performance.now();
-        const response = await fetch(`/discogs/stats/${releaseId}`);
-        const data = await response.json();
-        const endTime = performance.now();
-        const elapsed = ((endTime - startTime) / 1000).toFixed(2);
-        
-        const stats = data.stats;
-        const price = stats.lowest_price_eur;
-        const forSale = stats.num_for_sale || 0;
-        const url = stats.sell_list_url;
-        
-        let summary = price ? `€${price.toFixed(2)}, ${forSale} units` : 'No price';
-        addRequestLog('GET', `/discogs/stats/${releaseId}`, '', response.status, elapsed, summary, data.discogs_request);
-        
-        buttonElement.textContent = '✓ Got Price';
-        buttonElement.classList.remove('bg-purple-600', 'hover:bg-purple-700');
-        buttonElement.classList.add('bg-green-600');
-        
-        if (price && price > 0) {
-            priceDiv.innerHTML = `
-                <div class="bg-green-50 border border-green-200 rounded p-2">
-                    <div class="flex justify-between items-center text-sm">
-                        <span class="font-semibold text-green-700">€${price.toFixed(2)}</span>
-                        <span class="text-gray-600">${forSale} available</span>
-                    </div>
-                    <a href="${url}" target="_blank" class="block mt-2 text-center bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1 rounded">
-                        Buy on Discogs
-                    </a>
-                </div>
-            `;
-        } else {
-            priceDiv.innerHTML = `
-                <div class="bg-yellow-50 border border-yellow-200 rounded p-2 text-sm text-yellow-800">
-                    No price available (${forSale} listings found)
-                </div>
-            `;
-        }
-        
-        priceDiv.classList.remove('hidden');
-        
-    } catch (error) {
-        buttonElement.textContent = 'Error';
-        buttonElement.disabled = false;
-        buttonElement.classList.add('bg-red-600');
-        addRequestLog('GET', `/discogs/stats/${releaseId}`, '', 500, '0', `Error: ${error.message}`);
-    }
-}
-
 function displayResults(albums, stats, totalTime) {
     const resultsContainer = document.getElementById('results-container');
     const resultsDiv = document.getElementById('results');
@@ -473,18 +350,11 @@ function displayResults(albums, stats, totalTime) {
                     <div class="border-t pt-3 mt-3">
                         <button 
                             onclick="getPricing('${artistName.replace(/'/g, "\\'")}', '${albumName.replace(/'/g, "\\'")}', this)"
-                            class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded mb-2"
+                            class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded"
                         >
                             💰 Get Prices
                         </button>
                         <div class="pricing-info hidden mt-3"></div>
-                        <button 
-                            onclick="searchDiscogs('${artistName.replace(/'/g, "\\'")}', '${albumName.replace(/'/g, "\\'")}', this)"
-                            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded mb-2 mt-2"
-                        >
-                            🔍 Search Discogs Releases
-                        </button>
-                        <div class="discogs-releases hidden mt-3"></div>
                     </div>
                 </div>
             </div>
