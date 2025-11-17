@@ -76,8 +76,20 @@ async def get_marketplace_stats(release_id: int, currency: str = "EUR"):
 
 @app.get("/sell-list-url/{release_id}")
 async def get_sell_list_url(release_id: int):
-    url = f"https://www.discogs.com/sell/list?format=Vinyl&release_id={release_id}"
-    log_event("discogs-service", "INFO", f"Generated sell list URL for release {release_id}")
+    if not discogs_client or not discogs_client.is_ready():
+        raise HTTPException(status_code=503, detail="Discogs client not ready")
+    
+    # Get master_id from release_id
+    master_id = await discogs_client._get_master_id_from_release(release_id)
+    
+    # Use master_id if available, otherwise fallback to release_id
+    if master_id:
+        url = f"https://www.discogs.com/sell/list?master_id={master_id}&currency=EUR&format=Vinyl"
+        log_event("discogs-service", "INFO", f"Generated sell list URL for release {release_id} (master_id: {master_id})")
+    else:
+        url = f"https://www.discogs.com/sell/list?release_id={release_id}&currency=EUR&format=Vinyl"
+        log_event("discogs-service", "WARNING", f"Generated sell list URL for release {release_id} (master_id not found)")
+    
     return {"release_id": release_id, "url": url}
 
 
