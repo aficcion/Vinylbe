@@ -424,11 +424,20 @@ async def enrich_album_with_discogs(album: dict, idx: int, total: int, semaphore
                     selected_stats = stats_resp.json()
                 except Exception as e:
                     log_event("gateway", "WARNING", f"[{idx}/{total}] Failed to get stats for fallback release: {str(e)}")
+                    
+                    # Get sell list URL with master_id from Discogs service
+                    sell_url = f"https://www.discogs.com/sell/list?release_id={release_id}&currency=EUR&format=Vinyl"
+                    try:
+                        url_resp = await http_client.get(f"{DISCOGS_SERVICE_URL}/sell-list-url/{release_id}")
+                        sell_url = url_resp.json().get("url", sell_url)
+                    except:
+                        pass
+                    
                     selected_stats = {
                         "release_id": release_id,
                         "lowest_price_eur": None,
                         "num_for_sale": 0,
-                        "sell_list_url": f"https://www.discogs.com/sell/list?release_id={release_id}&currency=EUR&format=Vinyl"
+                        "sell_list_url": sell_url
                     }
             
             album["discogs_release"] = selected_release
