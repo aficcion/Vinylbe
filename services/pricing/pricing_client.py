@@ -1,6 +1,7 @@
 from typing import Optional, Dict, Any, List
 import os
 import httpx
+from libs.shared.utils import log_event
 
 EBAY_OAUTH_URL = "https://api.ebay.com/identity/v1/oauth2/token"
 EBAY_BROWSE_URL = "https://api.ebay.com/buy/browse/v1/item_summary/search"
@@ -77,13 +78,31 @@ class PricingClient:
           - título razonable (contenga artist y algo del álbum)
           - precio total más bajo (item + shipping)
           - en EUR
+          - ubicado en la Unión Europea
         """
         artist_n = normalize(artist)
         album_n = normalize(album)
+        
+        # Lista de códigos de país UE para validación
+        eu_country_codes = EU_COUNTRIES.split(",")
 
         candidates: List[Dict[str, Any]] = []
 
         for item in item_summaries:
+            # FILTRO DE UBICACIÓN UE (defensa contra API que ignora itemLocationCountry)
+            item_location = item.get("itemLocation", {})
+            item_country = item_location.get("country")
+            
+            if not item_country or item_country not in eu_country_codes:
+                # Log warning cuando eBay devuelve item fuera de UE
+                if item_country:
+                    log_event(
+                        "pricing-service", 
+                        "WARNING", 
+                        f"eBay returned non-EU item from {item_country}, filtering out"
+                    )
+                continue
+            
             title = item.get("title", "")
             title_n = normalize(title)
 
@@ -170,7 +189,7 @@ class PricingClient:
         )
         resp.raise_for_status()
         data = resp.json()
-
+        
         items = data.get("itemSummaries", [])
         return self._pick_best_ebay_item(items, artist=artist, album=album)
 
