@@ -154,7 +154,7 @@ class PricingClient:
         params = {
             "q": query,
             "category_ids": VINYL_CATEGORY_ID,
-            "filter": f"itemLocationCountry:{EU_COUNTRIES}",
+            "filter": f"itemLocationCountry:{{{EU_COUNTRIES}}}",
             "sort": "priceWithShipping",
             "limit": "20",
         }
