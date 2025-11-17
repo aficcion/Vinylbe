@@ -9,7 +9,7 @@ I want to prioritize a clear, concise, and professional communication style. For
 ## System Architecture
 
 ### UI/UX Decisions
-The user interface is interactive, featuring a service status monitor, a test panel for authentication and recommendations, a real-time request log for Discogs API calls, a progress tracker for Spotify processing, and a results view displaying recommended albums. Album cards provide detailed score breakdowns and interactive buttons for pricing and advanced Discogs searches. The UI prioritizes transparency, showing detailed request information and allowing users to control when external API quotas are consumed.
+The user interface is interactive, featuring a service status monitor, a test panel for authentication and recommendations, a real-time request log for Discogs API calls, a progress tracker for Spotify processing, and a results view displaying recommended albums. Album cards provide detailed score breakdowns and a pricing button that retrieves eBay offers, local store links, and a direct link to Discogs marketplace for the album's master release. The UI prioritizes transparency, showing detailed request information and allowing users to control when external API quotas are consumed.
 
 ### Technical Implementations
 The system is built on a microservices architecture using FastAPI and Python 3.11. Asynchronous communication between services is handled with `httpx`, and `asyncio.gather` is used for parallelizing API calls to minimize latency. Shared models are defined in `libs/shared/` to ensure data consistency across services. Structured logging with timestamps is implemented for detailed tracking and debugging.
@@ -20,8 +20,7 @@ The system is built on a microservices architecture using FastAPI and Python 3.1
 - **Recommendation Engine**: Scores tracks and artists based on listening frequency and time periods, aggregates albums, filters by track count, and boosts scores for favorite artists.
 - **Pricing Service**: Finds best prices on eBay filtered by EU location (27 countries) with dual-layer filtering (API + client-side validation), currency in EUR, and shipping to Spain. Automatically handles eBay API OAuth and provides links to local vinyl stores (Marilians, Bajo el Volcán, Bora Bora, Revolver).
 - **API Gateway**: Acts as a single entry point, orchestrates the recommendation and pricing workflows, proxies Spotify authentication, and performs health checks on all microservices.
-- **Optimized Pricing Flow**: Allows users to manually trigger pricing requests for recommended albums, executing Discogs, eBay, and local store lookups in parallel to achieve 0.5-0.7 second latency.
-- **Advanced Discogs Search**: Enables users to search for all vinyl releases of a specific artist/album, sort by preference (originals first), and retrieve individual release prices and marketplace stats on demand.
+- **Optimized Pricing Flow**: Allows users to manually trigger pricing requests for recommended albums, executing Discogs master link retrieval, eBay, and local store lookups in parallel to achieve 0.5-0.7 second latency. Returns direct marketplace link for purchasing vinyl on Discogs.
 
 ### System Design Choices
 The architecture comprises five independent microservices: `Spotify Service` (port 3000), `Discogs Service` (port 3001), `Recommender Service` (port 3002), `Pricing Service` (port 3003), and `API Gateway` (port 5000). This microservices approach ensures scalability, maintainability, and clear separation of concerns. The system is designed for a future evolution to a modular monolith with PostgreSQL for persistence and intelligent caching, supporting pre-loaded catalogs and advanced ingestion jobs.
