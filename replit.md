@@ -16,11 +16,11 @@ The system is built on a microservices architecture using FastAPI and Python 3.1
 
 ### Feature Specifications
 - **Spotify Integration**: Manages OAuth, retrieves user's top tracks and artists across different time periods, and refreshes tokens automatically.
-- **Discogs Integration**: Searches for vinyl releases, provides marketplace statistics (prices, availability), converts prices to EUR, and generates sales links, respecting rate limits.
+- **Discogs Integration**: Searches for vinyl releases, provides marketplace statistics (prices, availability), converts prices to EUR, and generates sales links using master_id structure (`https://www.discogs.com/sell/list?master_id={id}&currency=EUR&format=Vinyl`), respecting rate limits.
 - **Recommendation Engine**: Scores tracks and artists based on listening frequency and time periods, aggregates albums, filters by track count, and boosts scores for favorite artists.
-- **Pricing Service**: Finds best prices on eBay (filtered by EUR and shipping to Spain), automatically handles eBay API OAuth, and provides links to local vinyl stores (Marilians, Bajo el Volcán, Bora Bora, Revolver).
+- **Pricing Service**: Finds best prices on eBay filtered by EU location (27 countries) with dual-layer filtering (API + client-side validation), currency in EUR, and shipping to Spain. Automatically handles eBay API OAuth and provides links to local vinyl stores (Marilians, Bajo el Volcán, Bora Bora, Revolver).
 - **API Gateway**: Acts as a single entry point, orchestrates the recommendation and pricing workflows, proxies Spotify authentication, and performs health checks on all microservices.
-- **Optimized Pricing Flow**: Allows users to manually trigger pricing requests for recommended albums, executing Discogs, eBay, and local store lookups in parallel to achieve 1-2 second latency.
+- **Optimized Pricing Flow**: Allows users to manually trigger pricing requests for recommended albums, executing Discogs, eBay, and local store lookups in parallel to achieve 0.5-0.7 second latency.
 - **Advanced Discogs Search**: Enables users to search for all vinyl releases of a specific artist/album, sort by preference (originals first), and retrieve individual release prices and marketplace stats on demand.
 
 ### System Design Choices
