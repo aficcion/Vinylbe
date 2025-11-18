@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vinilogy - Descubre Vinilos</title>
+    <link rel="stylesheet" href="/static/artist-search.css">
     <style>
         :root {
             --bg-primary: #ffffff;
@@ -13,6 +14,12 @@
             --border-color: #e0e0e0;
             --accent-color: #1DB954;
             --card-bg: #ffffff;
+            --background: #ffffff;
+            --text: #000000;
+            --primary: #667eea;
+            --primary-fade: rgba(102, 126, 234, 0.1);
+            --card-background: #ffffff;
+            --error: #dc3545;
         }
 
         [data-theme="dark"] {
@@ -23,6 +30,12 @@
             --border-color: #333333;
             --accent-color: #1DB954;
             --card-bg: #0a0a0a;
+            --background: #000000;
+            --text: #ffffff;
+            --primary: #667eea;
+            --primary-fade: rgba(102, 126, 234, 0.1);
+            --card-background: #1a1a1a;
+            --error: #dc3545;
         }
 
         * {
@@ -535,6 +548,93 @@
                 grid-template-columns: 1fr;
             }
         }
+
+        .options-divider {
+            text-align: center;
+            margin: 2rem 0;
+            color: var(--text-secondary);
+            font-size: 1rem;
+            font-weight: 500;
+        }
+
+        .search-artists-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2.5rem;
+            border-radius: 50px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .search-artists-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .search-artists-btn:active {
+            transform: translateY(0);
+        }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--bg-primary);
+            border-radius: 16px;
+            max-width: 950px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 1.5rem;
+            right: 1.5rem;
+            background: var(--bg-secondary);
+            border: none;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            font-size: 20px;
+            cursor: pointer;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            z-index: 10;
+        }
+
+        .modal-close:hover {
+            background: var(--border-color);
+            transform: scale(1.1);
+        }
     </style>
 </head>
 <body>
@@ -546,12 +646,18 @@
     <div id="landing-view">
         <div class="hero">
             <h1>Descubre Vinilos Basados en tu Música</h1>
-            <p>Conecta tu Spotify y encuentra recomendaciones de vinilos personalizadas basadas en lo que escuchas</p>
+            <p>Conecta tu Spotify o busca tus artistas favoritos para encontrar recomendaciones de vinilos personalizadas</p>
             <button class="spotify-btn" onclick="loginSpotify()">
                 <svg class="spotify-icon" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
                 </svg>
                 Conectar con Spotify
+            </button>
+            
+            <div class="options-divider">o</div>
+            
+            <button class="search-artists-btn" onclick="openArtistSearch()">
+                🔍 Buscar artistas
             </button>
         </div>
 
@@ -610,6 +716,14 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="artist-search-modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeArtistSearch()">✕</button>
+            <div id="artist-search-container"></div>
+        </div>
+    </div>
+
+    <script src="/static/artist-search.js"></script>
     <script src="/static/app-user.js"></script>
 </body>
 </html>

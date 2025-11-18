@@ -288,6 +288,84 @@ function checkCachedRecommendations() {
     }
 }
 
+// Artist Search Modal
+let artistSearchComponent = null;
+
+function openArtistSearch() {
+    const modal = document.getElementById('artist-search-modal');
+    modal.classList.add('active');
+    
+    if (!artistSearchComponent) {
+        artistSearchComponent = new ArtistSearch('artist-search-container', {
+            minArtists: 3,
+            maxArtists: 10,
+            onContinue: handleArtistSelection
+        });
+    }
+}
+
+function closeArtistSearch() {
+    const modal = document.getElementById('artist-search-modal');
+    modal.classList.remove('active');
+}
+
+async function handleArtistSelection(selectedArtists) {
+    closeArtistSearch();
+    showLoading(true);
+    
+    const artistNames = selectedArtists.map(a => a.name);
+    
+    try {
+        const response = await fetch('/api/recommendations/artists', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                artist_names: artistNames,
+                spotify_token: null
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.recommendations && data.recommendations.length > 0) {
+            const formattedRecs = formatArtistRecommendations(data.recommendations);
+            localStorage.setItem('last_recommendations', JSON.stringify(formattedRecs));
+            localStorage.setItem('last_updated', new Date().toISOString());
+            renderRecommendations(formattedRecs);
+        } else {
+            showLoading(false);
+            alert('No se encontraron recomendaciones para estos artistas.');
+        }
+    } catch (error) {
+        console.error('Error loading artist recommendations:', error);
+        showLoading(false);
+        alert('Error al cargar recomendaciones. Por favor, intenta de nuevo.');
+    }
+}
+
+function formatArtistRecommendations(recommendations) {
+    return recommendations.map(rec => {
+        if (rec.source === 'artist_based') {
+            return {
+                album_info: {
+                    name: rec.album_name,
+                    artists: [{ name: rec.artist_name }],
+                    images: [],
+                    external_urls: {}
+                },
+                discogs_master_id: rec.discogs_master_id,
+                rating: rec.rating,
+                votes: rec.votes,
+                year: rec.year,
+                source: 'artist_based'
+            };
+        }
+        return rec;
+    });
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();

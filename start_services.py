@@ -27,6 +27,7 @@ if __name__ == "__main__":
         ("Discogs Service", ["uvicorn", "services.discogs.main:app", "--host", "0.0.0.0", "--port", "3001"]),
         ("Recommender Service", ["uvicorn", "services.recommender.main:app", "--host", "0.0.0.0", "--port", "3002"]),
         ("Pricing Service", ["uvicorn", "services.pricing.main:app", "--host", "0.0.0.0", "--port", "3003"]),
+        ("Last.fm Service", ["uvicorn", "services.lastfm.main:app", "--host", "0.0.0.0", "--port", "3004"]),
         ("API Gateway", ["uvicorn", "gateway.main:app", "--host", "0.0.0.0", "--port", "5000"]),
     ]
     
@@ -41,6 +42,7 @@ if __name__ == "__main__":
     print("- Discogs Service: http://localhost:3001")
     print("- Recommender Service: http://localhost:3002")
     print("- Pricing Service: http://localhost:3003")
+    print("- Last.fm Service: http://localhost:3004")
     print("- API Gateway: http://localhost:5000")
     print("\nPress Ctrl+C to stop all services")
     

@@ -7,6 +7,16 @@ This project is a comprehensive vinyl recommendation system that leverages Spoti
 I want to prioritize a clear, concise, and professional communication style. For development, I prefer an iterative approach, focusing on delivering core functionality first and then enhancing it. I value detailed explanations, especially for complex architectural decisions. Please ask for my approval before making any major changes to the system architecture or core functionalities.
 
 ## Recent Changes (November 18, 2025)
+**Integración de Búsqueda de Artistas y Recomendaciones Basadas en Artistas Manuales (LATEST):**
+- **Microservicio Last.fm**: Nuevo servicio (puerto 3004) con búsqueda Discogs-first para imágenes + Last.fm para géneros usando `artist.getTopTags`
+- **Recomendaciones basadas en artistas**: Sistema que obtiene discografía de estudio vía MusicBrainz, ratings de Discogs, selecciona top 3 discos por artista
+- **Algoritmo de mezclado**: Intercala recomendaciones 1:1 (1 Spotify, 1 artistas) para lista unificada
+- **UI de búsqueda**: Componente JavaScript modular con búsqueda incremental (≥4 caracteres), grid 2 columnas, pills de selección, validación 3-10 artistas
+- **Home page actualizada**: Dos opciones minimalistas - "Conectar con Spotify" o "Buscar artistas" con modal elegante
+- **Performance**: Búsqueda de artistas <2s, recomendaciones completas con 10 artistas estimadas en 15-30s (MusicBrainz + Discogs en paralelo)
+- **Arquitectura**: Separación completa backend/frontend, código modular y reutilizable
+
+
 **Last.fm Artist Explorer - Major API Optimization (LATEST):**
 - **Discogs-first search strategy**: Search now uses Discogs API directly (type=artist) for instant results with real thumbnails; falls back to Last.fm if credentials unavailable
 - **Simplified similar artists flow**: Uses Last.fm `artist.getInfo` which includes 5 similar artists in response, eliminating need for separate `artist.getSimilar` calls

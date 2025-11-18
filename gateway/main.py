@@ -19,6 +19,7 @@ SPOTIFY_SERVICE_URL = os.getenv("SPOTIFY_SERVICE_URL", "http://localhost:3000")
 DISCOGS_SERVICE_URL = os.getenv("DISCOGS_SERVICE_URL", "http://localhost:3001")
 RECOMMENDER_SERVICE_URL = os.getenv("RECOMMENDER_SERVICE_URL", "http://localhost:3002")
 PRICING_SERVICE_URL = os.getenv("PRICING_SERVICE_URL", "http://localhost:3003")
+LASTFM_SERVICE_URL = os.getenv("LASTFM_SERVICE_URL", "http://localhost:3004")
 
 http_client: httpx.AsyncClient | None = None
 
@@ -70,6 +71,7 @@ async def health_check():
         ("discogs", DISCOGS_SERVICE_URL),
         ("recommender", RECOMMENDER_SERVICE_URL),
         ("pricing", PRICING_SERVICE_URL),
+        ("lastfm", LASTFM_SERVICE_URL),
     ]:
         try:
             resp = await http_client.get(f"{service_url}/health", timeout=5.0)
@@ -504,3 +506,112 @@ async def recommend_vinyl():
     except Exception as e:
         log_event("gateway", "ERROR", f"Recommendation flow failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Recommendation failed: {str(e)}")
+
+
+@app.get("/api/lastfm/search")
+async def search_artists(q: str):
+    if not http_client:
+        raise HTTPException(status_code=500, detail="HTTP client not initialized")
+    
+    if len(q) < 4:
+        raise HTTPException(status_code=400, detail="Query must be at least 4 characters")
+    
+    try:
+        log_event("gateway", "INFO", f"Searching artists: {q}")
+        resp = await http_client.get(f"{LASTFM_SERVICE_URL}/search?q={q}")
+        data = resp.json()
+        log_event("gateway", "INFO", f"Found {len(data.get('artists', []))} artists")
+        return data
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Artist search failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+
+@app.post("/api/recommendations/artists")
+async def get_artist_recommendations(request: dict):
+    if not http_client:
+        raise HTTPException(status_code=500, detail="HTTP client not initialized")
+    
+    artist_names = request.get("artist_names", [])
+    spotify_token = request.get("spotify_token")
+    
+    if not artist_names:
+        raise HTTPException(status_code=400, detail="artist_names is required")
+    
+    if len(artist_names) < 3:
+        raise HTTPException(status_code=400, detail="Minimum 3 artists required")
+    
+    if len(artist_names) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 artists allowed")
+    
+    start_time = time.time()
+    log_event("gateway", "INFO", f"Getting recommendations for {len(artist_names)} artists")
+    
+    try:
+        artist_recs_resp = await http_client.post(
+            f"{RECOMMENDER_SERVICE_URL}/artist-recommendations",
+            json={"artist_names": artist_names, "top_per_artist": 3}
+        )
+        artist_recs = artist_recs_resp.json().get("recommendations", [])
+        log_event("gateway", "INFO", f"Got {len(artist_recs)} artist-based recommendations")
+        
+        spotify_recs = []
+        if spotify_token:
+            try:
+                log_event("gateway", "INFO", "Fetching Spotify recommendations")
+                tracks_resp = await http_client.get(f"{SPOTIFY_SERVICE_URL}/top-tracks")
+                tracks_data = tracks_resp.json()
+                all_tracks = tracks_data.get("tracks", [])
+                
+                artists_resp = await http_client.get(f"{SPOTIFY_SERVICE_URL}/top-artists")
+                artists_data = artists_resp.json()
+                all_artists = artists_data.get("artists", [])
+                
+                scored_tracks_resp = await http_client.post(
+                    f"{RECOMMENDER_SERVICE_URL}/score-tracks",
+                    json=all_tracks
+                )
+                scored_tracks = scored_tracks_resp.json().get("scored_tracks", [])
+                
+                scored_artists_resp = await http_client.post(
+                    f"{RECOMMENDER_SERVICE_URL}/score-artists",
+                    json=all_artists
+                )
+                scored_artists = scored_artists_resp.json().get("scored_artists", [])
+                
+                albums_resp = await http_client.post(
+                    f"{RECOMMENDER_SERVICE_URL}/aggregate-albums",
+                    json={"scored_tracks": scored_tracks, "scored_artists": scored_artists}
+                )
+                spotify_recs = albums_resp.json().get("albums", [])
+                log_event("gateway", "INFO", f"Got {len(spotify_recs)} Spotify recommendations")
+            except Exception as e:
+                log_event("gateway", "WARNING", f"Failed to get Spotify recommendations: {str(e)}")
+        
+        merge_resp = await http_client.post(
+            f"{RECOMMENDER_SERVICE_URL}/merge-recommendations",
+            json={
+                "spotify_recommendations": spotify_recs,
+                "artist_recommendations": artist_recs
+            }
+        )
+        merged = merge_resp.json().get("recommendations", [])
+        
+        end_time = time.time()
+        total_time = end_time - start_time
+        log_event("gateway", "INFO", f"Artist recommendations complete: {len(merged)} total in {total_time:.2f}s")
+        
+        return {
+            "recommendations": merged,
+            "total": len(merged),
+            "total_time_seconds": round(total_time, 2),
+            "stats": {
+                "artist_based": len(artist_recs),
+                "spotify_based": len(spotify_recs),
+                "total": len(merged)
+            }
+        }
+    
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Artist recommendations failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Recommendations failed: {str(e)}")
