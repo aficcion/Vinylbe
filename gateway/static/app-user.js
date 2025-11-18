@@ -49,7 +49,7 @@ async function handleSpotifyCallback() {
     }
 }
 
-// Show/hide loading state
+// Show/hide loading state (legacy, keep for simple loads)
 function showLoading(show, message = 'Cargando tus recomendaciones...') {
     const loadingEl = document.getElementById('loading');
     loadingEl.classList.toggle('active', show);
@@ -58,17 +58,60 @@ function showLoading(show, message = 'Cargando tus recomendaciones...') {
     }
 }
 
+// Progress modal control
+let progressStartTime = 0;
+
+function showProgressModal(title = 'Generando Recomendaciones') {
+    const modal = document.getElementById('progress-modal');
+    const titleEl = document.getElementById('progress-title');
+    
+    titleEl.textContent = title;
+    modal.classList.add('active');
+    progressStartTime = Date.now();
+    
+    updateProgressUI(0, 0, 'Iniciando...', '');
+}
+
+function hideProgressModal() {
+    const modal = document.getElementById('progress-modal');
+    modal.classList.remove('active');
+}
+
+function updateProgressUI(current, total, status, currentArtist = '') {
+    const progressBar = document.getElementById('progress-bar');
+    const percentage = document.getElementById('progress-percentage');
+    const statusEl = document.getElementById('progress-status');
+    const artistEl = document.getElementById('progress-current-artist');
+    const timeEl = document.getElementById('progress-time-estimate');
+    
+    const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+    
+    progressBar.style.width = `${percent}%`;
+    percentage.textContent = `${percent}%`;
+    statusEl.textContent = status;
+    artistEl.textContent = currentArtist ? `🔍 ${currentArtist}` : '';
+    
+    if (current > 0 && total > 0 && current < total) {
+        const elapsed = (Date.now() - progressStartTime) / 1000;
+        const timePerItem = elapsed / current;
+        const remaining = Math.round(timePerItem * (total - current));
+        timeEl.textContent = `⏱️ ~${remaining} segundos restantes`;
+    } else {
+        timeEl.textContent = '';
+    }
+}
+
 // Progress monitoring
 let progressInterval = null;
-
 let progressPollCount = 0;
 const MAX_PROGRESS_POLLS = 120;
 
-async function startProgressMonitoring() {
+async function startProgressMonitoring(contextTitle = 'Generando Recomendaciones') {
     if (progressInterval) {
         clearInterval(progressInterval);
     }
     
+    showProgressModal(contextTitle);
     progressPollCount = 0;
     
     progressInterval = setInterval(async () => {
@@ -78,6 +121,7 @@ async function startProgressMonitoring() {
             if (progressPollCount > MAX_PROGRESS_POLLS) {
                 console.warn('Progress monitoring timed out');
                 stopProgressMonitoring();
+                hideProgressModal();
                 return;
             }
             
@@ -90,8 +134,13 @@ async function startProgressMonitoring() {
             const progress = await response.json();
             
             if (progress.status === 'processing' && progress.total > 0) {
-                const message = `Procesando artista ${progress.current} de ${progress.total}...`;
-                showLoading(true, message);
+                const statusMsg = `Procesando artista ${progress.current} de ${progress.total}`;
+                updateProgressUI(
+                    progress.current, 
+                    progress.total, 
+                    statusMsg,
+                    progress.current_artist || ''
+                );
             } else if (progress.status === 'completed' || progress.status === 'idle' || progress.status === 'error') {
                 stopProgressMonitoring();
             }
@@ -135,8 +184,7 @@ async function loadRecommendations() {
 
 // Load mixed recommendations (artists + Spotify)
 async function loadMixedRecommendations(artistNames) {
-    showLoading(true, 'Preparando recomendaciones...');
-    startProgressMonitoring();
+    startProgressMonitoring('Combinando Recomendaciones');
     
     try {
         const response = await fetch('/api/recommendations/artists', {
@@ -153,6 +201,7 @@ async function loadMixedRecommendations(artistNames) {
         const data = await response.json();
         
         stopProgressMonitoring();
+        hideProgressModal();
         
         if (data.recommendations && data.recommendations.length > 0) {
             const formattedRecs = formatArtistRecommendations(data.recommendations);
@@ -161,13 +210,12 @@ async function loadMixedRecommendations(artistNames) {
             localStorage.setItem('has_spotify_connected', 'true');
             renderRecommendations(formattedRecs);
         } else {
-            showLoading(false);
             alert('No se encontraron recomendaciones. Por favor, intenta de nuevo.');
         }
     } catch (error) {
         console.error('Error loading mixed recommendations:', error);
         stopProgressMonitoring();
-        showLoading(false);
+        hideProgressModal();
         alert('Error al cargar recomendaciones. Por favor, intenta de nuevo.');
     }
 }
@@ -444,13 +492,14 @@ function closeArtistSearch() {
 
 async function handleArtistSelection(selectedArtists) {
     closeArtistSearch();
-    showLoading(true, 'Preparando recomendaciones...');
-    startProgressMonitoring();
     
     const artistNames = selectedArtists.map(a => a.name);
     localStorage.setItem('selected_artist_names', JSON.stringify(artistNames));
     
     const hasSpotifyConnected = localStorage.getItem('has_spotify_connected') === 'true';
+    const title = hasSpotifyConnected ? 'Combinando Recomendaciones' : 'Generando Recomendaciones';
+    
+    startProgressMonitoring(title);
     
     try {
         const response = await fetch('/api/recommendations/artists', {
@@ -467,6 +516,7 @@ async function handleArtistSelection(selectedArtists) {
         const data = await response.json();
         
         stopProgressMonitoring();
+        hideProgressModal();
         
         if (data.recommendations && data.recommendations.length > 0) {
             const formattedRecs = formatArtistRecommendations(data.recommendations);
@@ -474,13 +524,12 @@ async function handleArtistSelection(selectedArtists) {
             localStorage.setItem('last_updated', new Date().toISOString());
             renderRecommendations(formattedRecs);
         } else {
-            showLoading(false);
             alert('No se encontraron recomendaciones para estos artistas.');
         }
     } catch (error) {
         console.error('Error loading artist recommendations:', error);
         stopProgressMonitoring();
-        showLoading(false);
+        hideProgressModal();
         alert('Error al cargar recomendaciones. Por favor, intenta de nuevo.');
     }
 }
