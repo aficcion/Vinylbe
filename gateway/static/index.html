@@ -211,6 +211,13 @@
             margin-bottom: 2rem;
         }
 
+        .recommendations-title-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 2rem;
+        }
+
         .recommendations-header h2 {
             font-size: 2rem;
             font-weight: 700;
@@ -220,6 +227,42 @@
         .recommendations-header p {
             color: var(--text-secondary);
             font-size: 0.95rem;
+        }
+
+        .spotify-btn-small {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--accent-color);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 50px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(29, 185, 84, 0.3);
+            white-space: nowrap;
+        }
+
+        .spotify-btn-small:hover {
+            background: #1ed760;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(29, 185, 84, 0.4);
+        }
+
+        .spotify-btn-small .spotify-icon {
+            width: 20px;
+            height: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .recommendations-title-row {
+                flex-direction: column;
+                align-items: flex-start;
+            }
         }
 
         .albums-grid {
@@ -687,8 +730,18 @@
 
     <div id="recommendations-view" class="container">
         <div class="recommendations-header">
-            <h2>Recomendaciones</h2>
-            <p id="last-updated">Basado en tu escucha</p>
+            <div class="recommendations-title-row">
+                <div>
+                    <h2>Recomendaciones</h2>
+                    <p id="last-updated">Basado en tu escucha</p>
+                </div>
+                <button id="spotify-connect-btn" class="spotify-btn-small" onclick="loginSpotify()" style="display: none;">
+                    <svg class="spotify-icon" viewBox="0 0 24 24" fill="white">
+                        <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
+                    </svg>
+                    Conectar Spotify
+                </button>
+            </div>
         </div>
         <div class="albums-grid" id="albums-container">
         </div>

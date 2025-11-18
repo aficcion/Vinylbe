@@ -28,13 +28,14 @@ CLIENT = httpx.Client(
 class StudioAlbum:
     def __init__(self, title: str, year: str, discogs_master_id: str,
                  artist_name: str, rating: Optional[float] = None,
-                 votes: Optional[int] = None):
+                 votes: Optional[int] = None, cover_image: Optional[str] = None):
         self.title = title
         self.year = year
         self.discogs_master_id = discogs_master_id
         self.artist_name = artist_name
         self.rating = rating
         self.votes = votes
+        self.cover_image = cover_image
 
 
 def _mb_get(path: str, params: Dict[str, Any], tries: int = 5,
@@ -128,27 +129,39 @@ def _discogs_get(path: str, params: Dict[str, Any],
     return r.json()
 
 
-def _discogs_master_rating(master_id: str, key: str, secret: str) -> Tuple[Optional[float], Optional[int]]:
+def _discogs_master_data(master_id: str, key: str, secret: str) -> Tuple[Optional[float], Optional[int], Optional[str]]:
     if not master_id:
-        return None, None
+        return None, None, None
 
     try:
         data = _discogs_get(f"/masters/{master_id}", {}, key, secret)
         r = (data.get("community") or {}).get("rating") or {}
+        
+        cover_image = None
+        images = data.get("images", [])
+        if images and len(images) > 0:
+            cover_image = images[0].get("uri")
+        
         if r.get("average") is not None:
-            return float(r["average"]), int(r.get("count", 0))
+            return float(r["average"]), int(r.get("count", 0)), cover_image
 
         main_rel = data.get("main_release")
         if not main_rel:
-            return None, None
+            return None, None, cover_image
 
         rel = _discogs_get(f"/releases/{main_rel}", {}, key, secret)
         rr = (rel.get("community") or {}).get("rating") or {}
+        
+        if not cover_image:
+            rel_images = rel.get("images", [])
+            if rel_images and len(rel_images) > 0:
+                cover_image = rel_images[0].get("uri")
+        
         if rr.get("average") is None:
-            return None, None
-        return float(rr["average"]), int(rr.get("count", 0))
+            return None, None, cover_image
+        return float(rr["average"]), int(rr.get("count", 0)), cover_image
     except Exception:
-        return None, None
+        return None, None, None
 
 
 def get_artist_studio_albums(artist_name: str, discogs_key: str, discogs_secret: str,
@@ -181,14 +194,15 @@ def get_artist_studio_albums(artist_name: str, discogs_key: str, discogs_secret:
     
     albums_with_master = [a for a in studio_albums if a.discogs_master_id]
     
-    def fetch_rating(album: StudioAlbum) -> StudioAlbum:
-        rating, votes = _discogs_master_rating(album.discogs_master_id, discogs_key, discogs_secret)
+    def fetch_data(album: StudioAlbum) -> StudioAlbum:
+        rating, votes, cover_image = _discogs_master_data(album.discogs_master_id, discogs_key, discogs_secret)
         album.rating = rating
         album.votes = votes
+        album.cover_image = cover_image
         return album
     
     with ThreadPoolExecutor(max_workers=5) as executor:
-        future_to_album = {executor.submit(fetch_rating, album): album for album in albums_with_master}
+        future_to_album = {executor.submit(fetch_data, album): album for album in albums_with_master}
         for future in as_completed(future_to_album):
             try:
                 future.result()
@@ -220,6 +234,7 @@ def get_artist_based_recommendations(artist_names: List[str], discogs_key: str,
             "rating": album.rating,
             "votes": album.votes,
             "discogs_master_id": album.discogs_master_id,
+            "image_url": album.cover_image or "https://via.placeholder.com/300x300?text=No+Cover",
             "source": "artist_based"
         }
         recommendations.append(rec)

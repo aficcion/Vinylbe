@@ -77,7 +77,17 @@ function renderRecommendations(recommendations) {
     document.getElementById('album-detail-view').style.display = 'none';
     document.getElementById('recommendations-view').classList.add('active');
     
-    updateLastUpdatedText();
+    const hasArtistBased = recommendations.some(rec => rec.source === 'artist_based');
+    const hasSpotifyBased = recommendations.some(rec => rec.source !== 'artist_based');
+    
+    const spotifyBtn = document.getElementById('spotify-connect-btn');
+    if (hasArtistBased && !hasSpotifyBased) {
+        spotifyBtn.style.display = 'inline-flex';
+        document.getElementById('last-updated').textContent = 'Basado en tus artistas seleccionados';
+    } else {
+        spotifyBtn.style.display = 'none';
+        updateLastUpdatedText();
+    }
     
     const container = document.getElementById('albums-container');
     container.innerHTML = '';
@@ -92,15 +102,23 @@ function renderRecommendations(recommendations) {
 
 // Create album card (no pricing data yet)
 function createAlbumCard(rec) {
-    const albumInfo = rec.album_info || {};
-    const artist = albumInfo.artists?.[0]?.name || 'Unknown Artist';
-    const album = albumInfo.name || 'Unknown Album';
-    const cover = albumInfo.images?.[0]?.url || 'https://via.placeholder.com/300x300?text=No+Cover';
+    let artist, album, cover;
+    
+    if (rec.source === 'artist_based') {
+        artist = rec.artist_name || 'Unknown Artist';
+        album = rec.album_name || 'Unknown Album';
+        cover = rec.image_url || 'https://via.placeholder.com/300x300?text=No+Cover';
+    } else {
+        const albumInfo = rec.album_info || {};
+        artist = albumInfo.artists?.[0]?.name || 'Unknown Artist';
+        album = albumInfo.name || 'Unknown Album';
+        cover = albumInfo.images?.[0]?.url || 'https://via.placeholder.com/300x300?text=No+Cover';
+    }
     
     const card = document.createElement('div');
     card.className = 'album-card';
     card.innerHTML = `
-        <img src="${cover}" alt="${album}" class="album-cover" loading="lazy">
+        <img src="${cover}" alt="${album}" class="album-cover" loading="lazy" onerror="this.src='https://via.placeholder.com/300x300?text=No+Cover'">
         <div class="album-info">
             <div class="album-title">${album}</div>
             <div class="album-artist">${artist}</div>
@@ -116,11 +134,20 @@ function createAlbumCard(rec) {
 
 // Open album detail page
 async function openAlbumDetail(rec) {
-    const albumInfo = rec.album_info || {};
-    const artist = albumInfo.artists?.[0]?.name || 'Unknown Artist';
-    const album = albumInfo.name || 'Unknown Album';
-    const cover = albumInfo.images?.[0]?.url || 'https://via.placeholder.com/300x300?text=No+Cover';
-    const spotifyUrl = albumInfo.external_urls?.spotify || null;
+    let artist, album, cover, spotifyUrl;
+    
+    if (rec.source === 'artist_based') {
+        artist = rec.artist_name || 'Unknown Artist';
+        album = rec.album_name || 'Unknown Album';
+        cover = rec.image_url || 'https://via.placeholder.com/300x300?text=No+Cover';
+        spotifyUrl = null;
+    } else {
+        const albumInfo = rec.album_info || {};
+        artist = albumInfo.artists?.[0]?.name || 'Unknown Artist';
+        album = albumInfo.name || 'Unknown Album';
+        cover = albumInfo.images?.[0]?.url || 'https://via.placeholder.com/300x300?text=No+Cover';
+        spotifyUrl = albumInfo.external_urls?.spotify || null;
+    }
     
     document.getElementById('recommendations-view').classList.remove('active');
     document.getElementById('album-detail-view').style.display = 'block';
@@ -349,12 +376,9 @@ function formatArtistRecommendations(recommendations) {
     return recommendations.map(rec => {
         if (rec.source === 'artist_based') {
             return {
-                album_info: {
-                    name: rec.album_name,
-                    artists: [{ name: rec.artist_name }],
-                    images: [],
-                    external_urls: {}
-                },
+                album_name: rec.album_name,
+                artist_name: rec.artist_name,
+                image_url: rec.image_url,
                 discogs_master_id: rec.discogs_master_id,
                 rating: rec.rating,
                 votes: rec.votes,
