@@ -9,7 +9,20 @@ I want to prioritize a clear, concise, and professional communication style. For
 ## System Architecture
 
 ### UI/UX Decisions
-The user interface is interactive, featuring a service status monitor, a test panel for authentication and recommendations, a real-time request log for Discogs API calls, a progress tracker for Spotify processing, and a results view displaying recommended albums. Album cards provide detailed score breakdowns and a pricing button that retrieves eBay offers, local store links, and a direct link to Discogs marketplace for the album's master release. The UI prioritizes transparency, showing detailed request information and allowing users to control when external API quotas are consumed.
+
+**User Interface (/):**
+The main user interface is a clean, minimalista landing page with dark/light theme support. Features include:
+- Hero section with clear value proposition and prominent "Conectar con Spotify" button
+- Automatic flow: login → auto-fetch recommendations → display grid with all pricing pre-loaded
+- Grid layout: 4 columns (desktop), 3 columns (tablet), 2 columns (mobile), 1 column (small mobile)
+- Album cards with high-quality Spotify cover art, expandable on click to show pricing and purchase links
+- Skeleton loading states for progressive rendering
+- Persistent theme preference with localStorage
+- Timestamp showing "Actualizado hace X horas"
+- Direct links to Discogs marketplace, eBay offers, and local vinyl stores
+
+**Admin Interface (/admin):**
+Technical dashboard for monitoring and debugging, featuring service status monitors, real-time request logs for Discogs API calls, progress tracker for Spotify processing, and detailed debugging information. The admin UI prioritizes transparency, showing detailed request information and allowing manual control of all workflows.
 
 ### Technical Implementations
 The system is built on a microservices architecture using FastAPI and Python 3.11. Asynchronous communication between services is handled with `httpx`, and `asyncio.gather` is used for parallelizing API calls to minimize latency. Shared models are defined in `libs/shared/` to ensure data consistency across services. Structured logging with timestamps is implemented for detailed tracking and debugging.
