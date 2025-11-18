@@ -18,8 +18,31 @@ async function loginSpotify() {
         const data = await response.json();
         
         if (data.authorize_url) {
-            localStorage.setItem('vinilogy_flow', 'pending');
-            window.location.href = data.authorize_url;
+            // Open in popup window
+            const width = 600;
+            const height = 700;
+            const left = (screen.width / 2) - (width / 2);
+            const top = (screen.height / 2) - (height / 2);
+            
+            localStorage.setItem('vinilogy_auth_pending', 'true');
+            const authWindow = window.open(
+                data.authorize_url,
+                'spotify-auth',
+                `width=${width},height=${height},left=${left},top=${top}`
+            );
+            
+            // Poll for auth completion
+            const pollInterval = setInterval(async () => {
+                if (authWindow.closed) {
+                    clearInterval(pollInterval);
+                    if (localStorage.getItem('vinilogy_auth_pending') === 'true') {
+                        localStorage.removeItem('vinilogy_auth_pending');
+                        // Check if auth succeeded by trying to load recommendations
+                        showLoading(true);
+                        await loadRecommendations();
+                    }
+                }
+            }, 500);
         }
     } catch (error) {
         console.error('Error initiating Spotify login:', error);
@@ -30,17 +53,23 @@ async function loginSpotify() {
 // Handle Spotify callback
 async function handleSpotifyCallback() {
     const urlParams = new URLSearchParams(window.location.search);
-    const auth = urlParams.get('auth');
+    const code = urlParams.get('code');
     
-    if (auth === 'success') {
-        localStorage.removeItem('vinilogy_flow');
-        window.history.replaceState({}, document.title, '/');
-        showLoading(true);
-        await loadRecommendations();
-    } else if (auth === 'error') {
-        localStorage.removeItem('vinilogy_flow');
-        window.history.replaceState({}, document.title, '/');
-        alert('Error al completar la autenticación. Por favor, intenta de nuevo.');
+    if (code) {
+        try {
+            const response = await fetch(`/auth/callback?code=${code}`);
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                localStorage.setItem('vinilogy_auth_pending', 'false');
+                window.close(); // Close popup
+            } else {
+                alert('Error al autenticar. Por favor, cierra esta ventana e intenta de nuevo.');
+            }
+        } catch (error) {
+            console.error('Error in callback:', error);
+            alert('Error al completar la autenticación.');
+        }
     }
 }
 

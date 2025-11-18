@@ -107,14 +107,9 @@ async def spotify_callback(code: str):
         raise HTTPException(status_code=500, detail="HTTP client not initialized")
     try:
         resp = await http_client.get(f"{SPOTIFY_SERVICE_URL}/auth/callback?code={code}")
-        data = resp.json()
-        if data.get("status") == "success":
-            return RedirectResponse(url="/?auth=success")
-        else:
-            return RedirectResponse(url="/?auth=error")
+        return resp.json()
     except Exception as e:
-        log_event("gateway", "ERROR", f"Auth callback failed: {str(e)}")
-        return RedirectResponse(url="/?auth=error")
+        raise HTTPException(status_code=500, detail=f"Failed to authenticate: {str(e)}")
 
 
 @app.get("/spotify/callback")
