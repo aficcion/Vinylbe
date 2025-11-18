@@ -57,7 +57,7 @@ async function handleSpotifyCallback() {
             const response = await fetch(`/auth/callback?code=${code}`);
             const data = await response.json();
             
-            if (data.status === 'success') {
+            if (data.status === 'ok') {
                 if (window.opener) {
                     window.opener.authPending = true;
                 }
@@ -195,11 +195,14 @@ function renderDetailPricing(pricing) {
     let html = '';
     
     if (pricing.ebay_offer) {
+        const url = pricing.ebay_offer.url || '#';
+        const totalPrice = pricing.ebay_offer.total_price || 'N/A';
+        
         html += `
             <div class="price-highlight">
                 <div class="price-label">Mejor precio eBay</div>
-                <div class="price-value">${pricing.ebay_offer.total_price} EUR</div>
-                <a href="${pricing.ebay_offer.item_web_url}" target="_blank" class="btn-primary">
+                <div class="price-value">${totalPrice} EUR</div>
+                <a href="${url}" target="_blank" class="btn-primary">
                     🛒 Comprar en eBay
                 </a>
             </div>
@@ -214,19 +217,30 @@ function renderDetailPricing(pricing) {
         `;
     }
     
-    if (pricing.local_stores && pricing.local_stores.length > 0) {
-        html += '<div class="stores-section"><h3>Tiendas Locales</h3>';
-        pricing.local_stores.forEach(store => {
-            html += `
-                <a href="${store.url}" target="_blank" class="store-link">
-                    🏪 ${store.name}
-                </a>
-            `;
-        });
-        html += '</div>';
+    if (pricing.local_stores && typeof pricing.local_stores === 'object') {
+        const storeNames = {
+            'marilians': 'Marilians',
+            'bajo_el_volcan': 'Bajo el Volcán',
+            'bora_bora': 'Bora Bora',
+            'revolver': 'Revolver Records'
+        };
+        
+        const storeEntries = Object.entries(pricing.local_stores);
+        if (storeEntries.length > 0) {
+            html += '<div class="stores-section"><h3>Tiendas Locales</h3>';
+            storeEntries.forEach(([key, url]) => {
+                const name = storeNames[key] || key;
+                html += `
+                    <a href="${url}" target="_blank" class="store-link">
+                        🏪 ${name}
+                    </a>
+                `;
+            });
+            html += '</div>';
+        }
     }
     
-    if (!pricing.ebay_offer && !pricing.discogs_sell_url && (!pricing.local_stores || pricing.local_stores.length === 0)) {
+    if (!pricing.ebay_offer && !pricing.discogs_sell_url && (!pricing.local_stores || Object.keys(pricing.local_stores).length === 0)) {
         html = '<p class="no-pricing">No hay precios disponibles en este momento</p>';
     }
     
