@@ -7,17 +7,17 @@ This project is a comprehensive vinyl recommendation system that leverages Spoti
 I want to prioritize a clear, concise, and professional communication style. For development, I prefer an iterative approach, focusing on delivering core functionality first and then enhancing it. I value detailed explanations, especially for complex architectural decisions. Please ask for my approval before making any major changes to the system architecture or core functionalities.
 
 ## Recent Changes (November 18, 2025)
-**Modal de Progreso Visual Mejorado (LATEST):**
-- **Modal overlay de pantalla completa**: Indicador de progreso visual moderno con barra animada, porcentaje, y mensajes detallados
-- **Barra de progreso animada**: Gradiente verde Spotify con efecto shimmer, muestra porcentaje exacto (ej: "75%")
-- **Información contextual detallada**: "Procesando artista 3 de 5" + nombre del artista actual que se está analizando
-- **Estimación de tiempo**: Cálculo dinámico de tiempo restante basado en velocidad de procesamiento
-- **Títulos contextuales**: "Generando Recomendaciones" para solo artistas, "Combinando Recomendaciones" para merge Spotify+artistas
-- **Manejo robusto de estados**: Cierre automático en timeout (60s) con alert al usuario, manejo de errores con mensajes claros
-- **Sin bloqueos de UI**: Eliminada interferencia con loading legacy, ambos sistemas coexisten correctamente
-- **Animaciones suaves**: FadeIn/SlideUp para entrada, backdrop blur, icono con pulse animation
-- **Polling optimizado**: 500ms de intervalo, actualización fluida de UI sin degradar performance
-- **Arquitectura limpia**: Separación clara entre loading simple (Spotify solo) y modal de progreso (artistas/merge)
+**Banner de Progreso No-Bloqueante (LATEST):**
+- **Banner fijo superior**: Indicador de progreso posicionado en top de la página, NO bloquea interacción con recomendaciones
+- **Usuario puede navegar libremente**: Permite ver, scrollear e interactuar con recomendaciones existentes mientras se generan nuevas
+- **Barra de progreso con doble modo**: Animación determinada (width transition) cuando hay porcentaje real, animación indeterminada (gradiente deslizante) cuando inicia
+- **Shimmer effect**: Efecto visual constante sobre la barra para feedback continuo
+- **Información inline horizontal**: Estatus, artista actual, tiempo estimado y porcentaje mostrados en línea compacta
+- **Accesibilidad mejorada**: `role="status"` y `aria-live="polite"` para lectores de pantalla
+- **Animación slideDown**: Banner desciende suavemente desde arriba sin bloquear contenido
+- **Z-index optimizado**: 1000 (debajo de modales como búsqueda de artistas) para jerarquía correcta
+- **Polling optimizado**: 500ms de intervalo, timeout 60s con mensajes de error claros
+- **Separación de flujos**: Loading simple (spinner) para Spotify solo, banner de progreso para artistas y merge
 
 **Sistema de Fallback Triple a Discogs:**
 - **Fallback automático a Discogs**: Cuando MusicBrainz no tiene discogs_master_id, el sistema busca automáticamente en Discogs API (primero masters por artista+título, luego releases si no encuentra master)
