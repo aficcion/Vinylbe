@@ -58,25 +58,25 @@ function showLoading(show, message = 'Cargando tus recomendaciones...') {
     }
 }
 
-// Progress modal control
+// Progress banner control
 let progressStartTime = 0;
 
 function showProgressModal(title = 'Generando Recomendaciones') {
-    const modal = document.getElementById('progress-modal');
+    const banner = document.getElementById('progress-banner');
     const titleEl = document.getElementById('progress-title');
     
     showLoading(false);
     
     titleEl.textContent = title;
-    modal.classList.add('active');
+    banner.classList.add('active');
     progressStartTime = Date.now();
     
     updateProgressUI(0, 0, 'Iniciando...', '');
 }
 
 function hideProgressModal() {
-    const modal = document.getElementById('progress-modal');
-    modal.classList.remove('active');
+    const banner = document.getElementById('progress-banner');
+    banner.classList.remove('active');
     showLoading(false);
 }
 
@@ -89,16 +89,28 @@ function updateProgressUI(current, total, status, currentArtist = '') {
     
     const percent = total > 0 ? Math.round((current / total) * 100) : 0;
     
-    progressBar.style.width = `${percent}%`;
+    if (total === 0 || percent === 0) {
+        progressBar.classList.add('indeterminate');
+        progressBar.style.width = '';
+    } else {
+        progressBar.classList.remove('indeterminate');
+        progressBar.style.width = `${percent}%`;
+    }
+    
     percentage.textContent = `${percent}%`;
     statusEl.textContent = status;
-    artistEl.textContent = currentArtist ? `🔍 ${currentArtist}` : '';
+    
+    if (currentArtist) {
+        artistEl.textContent = ` | 🔍 ${currentArtist}`;
+    } else {
+        artistEl.textContent = '';
+    }
     
     if (current > 0 && total > 0 && current < total) {
         const elapsed = (Date.now() - progressStartTime) / 1000;
         const timePerItem = elapsed / current;
         const remaining = Math.round(timePerItem * (total - current));
-        timeEl.textContent = `⏱️ ~${remaining} segundos restantes`;
+        timeEl.textContent = ` | ⏱️ ~${remaining}s`;
     } else {
         timeEl.textContent = '';
     }
