@@ -36,7 +36,13 @@ async function handleSpotifyCallback() {
         window.history.replaceState({}, document.title, '/');
         localStorage.removeItem('vinilogy_auth_pending');
         showLoading(true);
-        await loadRecommendations();
+        
+        const savedArtists = localStorage.getItem('selected_artist_names');
+        if (savedArtists) {
+            await loadMixedRecommendations(JSON.parse(savedArtists));
+        } else {
+            await loadRecommendations();
+        }
     } else if (auth === 'error') {
         window.history.replaceState({}, document.title, '/');
         alert('Error al autenticar con Spotify. Por favor, intenta de nuevo.');
@@ -59,6 +65,7 @@ async function loadRecommendations() {
         if (data.albums && data.albums.length > 0) {
             localStorage.setItem('last_recommendations', JSON.stringify(data.albums));
             localStorage.setItem('last_updated', new Date().toISOString());
+            localStorage.setItem('has_spotify_connected', 'true');
             renderRecommendations(data.albums);
         } else {
             showLoading(false);
@@ -66,6 +73,41 @@ async function loadRecommendations() {
         }
     } catch (error) {
         console.error('Error loading recommendations:', error);
+        showLoading(false);
+        alert('Error al cargar recomendaciones. Por favor, intenta de nuevo.');
+    }
+}
+
+// Load mixed recommendations (artists + Spotify)
+async function loadMixedRecommendations(artistNames) {
+    showLoading(true);
+    
+    try {
+        const response = await fetch('/api/recommendations/artists', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                artist_names: artistNames,
+                spotify_token: true
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.recommendations && data.recommendations.length > 0) {
+            const formattedRecs = formatArtistRecommendations(data.recommendations);
+            localStorage.setItem('last_recommendations', JSON.stringify(formattedRecs));
+            localStorage.setItem('last_updated', new Date().toISOString());
+            localStorage.setItem('has_spotify_connected', 'true');
+            renderRecommendations(formattedRecs);
+        } else {
+            showLoading(false);
+            alert('No se encontraron recomendaciones. Por favor, intenta de nuevo.');
+        }
+    } catch (error) {
+        console.error('Error loading mixed recommendations:', error);
         showLoading(false);
         alert('Error al cargar recomendaciones. Por favor, intenta de nuevo.');
     }
@@ -79,15 +121,20 @@ function renderRecommendations(recommendations) {
     
     const hasArtistBased = recommendations.some(rec => rec.source === 'artist_based');
     const hasSpotifyBased = recommendations.some(rec => rec.source !== 'artist_based');
+    const hasSpotifyConnected = localStorage.getItem('has_spotify_connected') === 'true';
     
     const spotifyBtn = document.getElementById('spotify-connect-btn');
-    if (hasArtistBased && !hasSpotifyBased) {
+    const artistSearchBtn = document.getElementById('artist-search-header-btn');
+    
+    if (hasArtistBased && !hasSpotifyBased && !hasSpotifyConnected) {
         spotifyBtn.style.display = 'inline-flex';
         document.getElementById('last-updated').textContent = 'Basado en tus artistas seleccionados';
     } else {
         spotifyBtn.style.display = 'none';
         updateLastUpdatedText();
     }
+    
+    artistSearchBtn.style.display = 'inline-flex';
     
     const container = document.getElementById('albums-container');
     container.innerHTML = '';
@@ -341,6 +388,9 @@ async function handleArtistSelection(selectedArtists) {
     showLoading(true);
     
     const artistNames = selectedArtists.map(a => a.name);
+    localStorage.setItem('selected_artist_names', JSON.stringify(artistNames));
+    
+    const hasSpotifyConnected = localStorage.getItem('has_spotify_connected') === 'true';
     
     try {
         const response = await fetch('/api/recommendations/artists', {
@@ -350,7 +400,7 @@ async function handleArtistSelection(selectedArtists) {
             },
             body: JSON.stringify({
                 artist_names: artistNames,
-                spotify_token: null
+                spotify_token: hasSpotifyConnected ? true : null
             })
         });
         
