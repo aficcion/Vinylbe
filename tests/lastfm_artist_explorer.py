@@ -50,12 +50,6 @@ _RE_DISCOGS_MASTER = re.compile(
     r"https?://(?:www\.)?discogs\.com/(?:[a-z]{2}/)?master/(\d+)", re.I
 )
 
-# Hashes conocidos de placeholders genéricos de Last.fm
-# Estos se filtrarán para mostrar el emoji 🎵 en lugar de un placeholder genérico
-# Nota: Last.fm actualmente tiene problemas y devuelve este placeholder para casi todos los artistas
-LASTFM_PLACEHOLDER_HASHES = {
-    "2a96cbd8b46e442fc41c2b86b821562f",
-}
 
 # =========================
 # Cliente HTTP reutilizable (MB + Discogs)
@@ -102,8 +96,89 @@ class LastFMClient:
             params.update(extra)
         return params
 
+    def search_artists_discogs(self, query: str, limit: int = 5) -> Tuple[List[Artist], float]:
+        """
+        Busca artistas en Discogs si hay credenciales (trae imágenes thumb).
+        Fallback a Last.fm si no hay credenciales de Discogs.
+        Devuelve (lista de artistas, tiempo en segundos).
+        """
+        start_time = time.time()
+        
+        if not query.strip():
+            return [], 0.0
+
+        if self.discogs_key and self.discogs_secret:
+            try:
+                params = {
+                    "q": query.strip(),
+                    "type": "artist",
+                    "key": self.discogs_key,
+                    "secret": self.discogs_secret,
+                    "per_page": str(limit),
+                }
+                
+                with httpx.Client(timeout=10.0) as client:
+                    resp = client.get(f"{DISCOGS_BASE}/database/search", params=params)
+                resp.raise_for_status()
+                data = resp.json()
+                
+                results = data.get("results", [])
+                artists: List[Artist] = []
+                
+                for item in results[:limit]:
+                    name = item.get("title")
+                    if not name:
+                        continue
+                        
+                    thumb_url = item.get("thumb")
+                    if thumb_url and thumb_url.startswith("http"):
+                        image_url = thumb_url
+                    else:
+                        image_url = None
+                    
+                    artists.append(Artist(name=name, mbid=None, image_url=image_url))
+                
+                elapsed = time.time() - start_time
+                return artists, elapsed
+                
+            except httpx.HTTPError as e:
+                st.warning(f"Error al consultar Discogs, usando Last.fm como fallback: {e}")
+        
+        params = self._build_params(
+            "artist.search",
+            {
+                "artist": query,
+                "limit": str(limit),
+            },
+        )
+
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.get(self.base_url, params=params)
+            resp.raise_for_status()
+        except httpx.HTTPError as e:
+            st.error(f"Error al consultar Last.fm: {e}")
+            return [], time.time() - start_time
+
+        data = resp.json()
+        results = data.get("results", {}).get("artistmatches", {}).get("artist", [])
+
+        if isinstance(results, dict):
+            results = [results]
+
+        artists: List[Artist] = []
+        for item in results:
+            name = item.get("name")
+            if not name:
+                continue
+            mbid = item.get("mbid") or None
+            artists.append(Artist(name=name, mbid=mbid, image_url=None))
+        
+        elapsed = time.time() - start_time
+        return artists, elapsed
+
     def get_artist_info(self, *, name: Optional[str] = None, mbid: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """Obtiene información detallada del artista usando artist.getInfo (mejores imágenes)."""
+        """Obtiene información detallada del artista usando artist.getInfo (incluye 5 similares)."""
         extra: Dict[str, str] = {}
         if mbid:
             extra["mbid"] = mbid
@@ -123,165 +198,41 @@ class LastFMClient:
         except httpx.HTTPError:
             return None
 
-    def search_artists(self, query: str, limit: int = 5) -> Tuple[List[Artist], float]:
+    def get_similar_artist_images_discogs(self, artist_names: List[str]) -> Dict[str, Optional[str]]:
         """
-        Last.fm artist.search con fallback a Discogs para imágenes.
-        Devuelve (lista de artistas, tiempo en segundos).
+        Busca imágenes en Discogs para una lista de nombres de artistas.
+        Devuelve diccionario {nombre_artista: url_imagen}
         """
-        start_time = time.time()
-        
-        if not query.strip():
-            return [], 0.0
-
-        params = self._build_params(
-            "artist.search",
-            {
-                "artist": query,
-                "limit": str(limit),
-            },
-        )
-
-        try:
-            with httpx.Client(timeout=10.0) as client:
-                resp = client.get(self.base_url, params=params)
-            resp.raise_for_status()
-        except httpx.HTTPError as e:
-            st.error(f"Error al consultar Last.fm (search): {e}")
-            return [], time.time() - start_time
-
-        data = resp.json()
-        results = data.get("results", {}).get("artistmatches", {}).get("artist", [])
-
-        if isinstance(results, dict):
-            results = [results]
-
-        artists: List[Artist] = []
-        for item in results:
-            name = item.get("name")
-            if not name:
+        result = {}
+        for name in artist_names:
+            if not name or not self.discogs_key or not self.discogs_secret:
+                result[name] = None
                 continue
-            mbid = item.get("mbid") or None
-            image_url = self._extract_best_image(item.get("image"))
-            
-            if not image_url:
-                artist_info = self.get_artist_info(name=name, mbid=mbid)
-                if artist_info:
-                    image_url = self._extract_best_image(artist_info.get("image"))
-            
-            if not image_url and self.discogs_key and self.discogs_secret:
-                image_url = _get_discogs_artist_image(name, self.discogs_key, self.discogs_secret)
-            
-            artists.append(Artist(name=name, mbid=mbid, image_url=image_url))
-        
-        elapsed = time.time() - start_time
-        return artists, elapsed
-
-    def get_similar_artists(
-        self,
-        *,
-        name: Optional[str] = None,
-        mbid: Optional[str] = None,
-        limit: int = 50,
-    ) -> Tuple[List[Artist], float]:
-        """
-        Last.fm artist.getSimilar con fallback a Discogs para imágenes.
-        Devuelve (lista de artistas, tiempo en segundos).
-        """
-        start_time = time.time()
-        
-        extra: Dict[str, str] = {"limit": str(limit)}
-        if mbid:
-            extra["mbid"] = mbid
-        elif name:
-            extra["artist"] = name
-        else:
-            return [], 0.0
-
-        params = self._build_params("artist.getSimilar", extra)
-
-        try:
-            with httpx.Client(timeout=10.0) as client:
-                resp = client.get(self.base_url, params=params)
-            resp.raise_for_status()
-        except httpx.HTTPError as e:
-            st.error(f"Error al consultar Last.fm (similar): {e}")
-            return [], time.time() - start_time
-
-        data = resp.json()
-        results = data.get("similarartists", {}).get("artist", [])
-
-        if isinstance(results, dict):
-            results = [results]
-
-        artists: List[Artist] = []
-        for item in results:
-            artist_name = item.get("name")
-            if not artist_name:
-                continue
-            mbid_val = item.get("mbid") or None
-            image_url = self._extract_best_image(item.get("image"))
-            
-            if not image_url:
-                artist_info = self.get_artist_info(name=artist_name, mbid=mbid_val)
-                if artist_info:
-                    image_url = self._extract_best_image(artist_info.get("image"))
-            
-            if not image_url and self.discogs_key and self.discogs_secret:
-                image_url = _get_discogs_artist_image(artist_name, self.discogs_key, self.discogs_secret)
-            
-            artists.append(Artist(name=artist_name, mbid=mbid_val, image_url=image_url))
-        
-        elapsed = time.time() - start_time
-        return artists, elapsed
-
-    @staticmethod
-    def _is_placeholder_image(url: str) -> bool:
-        """Verifica si la URL es un placeholder genérico de Last.fm."""
-        if not url:
-            return True
-        
-        for placeholder_hash in LASTFM_PLACEHOLDER_HASHES:
-            if placeholder_hash in url:
-                return True
-        return False
-
-    @staticmethod
-    def _extract_best_image(images: Any) -> Optional[str]:
-        """
-        Extrae la mejor URL de imagen de Last.fm, filtrando placeholders genéricos.
-        Prioriza: extralarge > large > medium > small
-        """
-        if not images:
-            return None
-
-        if isinstance(images, dict):
-            images_list = [images]
-        elif isinstance(images, list):
-            images_list = images
-        else:
-            return None
-
-        size_priority = {"extralarge": 4, "large": 3, "medium": 2, "small": 1}
-        best_url = None
-        best_priority = 0
-
-        for img in images_list:
-            if not isinstance(img, dict):
-                continue
-            url = img.get("#text") or img.get("text") or ""
-            url = url.strip()
-            
-            if not url or LastFMClient._is_placeholder_image(url):
-                continue
-            
-            size = img.get("size", "")
-            priority = size_priority.get(size, 0)
-            
-            if priority > best_priority:
-                best_url = url
-                best_priority = priority
-
-        return best_url
+                
+            try:
+                params = {
+                    "q": name,
+                    "type": "artist",
+                    "key": self.discogs_key,
+                    "secret": self.discogs_secret,
+                    "per_page": "1",
+                }
+                
+                with httpx.Client(timeout=5.0) as client:
+                    resp = client.get(f"{DISCOGS_BASE}/database/search", params=params)
+                resp.raise_for_status()
+                data = resp.json()
+                
+                results = data.get("results", [])
+                if results and results[0].get("thumb"):
+                    result[name] = results[0]["thumb"]
+                else:
+                    result[name] = None
+                    
+            except httpx.HTTPError:
+                result[name] = None
+                
+        return result
 
 
 # =========================
@@ -411,41 +362,6 @@ def _discogs_master_rating(master_id: str, key: str, secret: str, debug: bool = 
     return float(rr["average"]), int(rr.get("count", 0))
 
 
-def _get_discogs_artist_image(artist_name: str, key: str, secret: str, debug: bool = False) -> Optional[str]:
-    """
-    Busca un artista en Discogs y devuelve la URL de su imagen de alta calidad.
-    Devuelve None si no se encuentra el artista o no tiene imagen.
-    """
-    if not artist_name or not key or not secret:
-        return None
-    
-    try:
-        data = _discogs_get(
-            "/database/search",
-            {"q": artist_name, "type": "artist"},
-            key,
-            secret,
-            sleep_after_ok=0.25,
-            debug=debug
-        )
-        
-        results = data.get("results", [])
-        if not results:
-            return None
-        
-        first_result = results[0]
-        cover_image = first_result.get("cover_image")
-        
-        if cover_image and cover_image.strip():
-            return cover_image
-        
-        return None
-    except Exception as e:
-        if debug:
-            st.write(f"[Discogs] Error buscando imagen para {artist_name}: {e}")
-        return None
-
-
 # =========================
 # Parallel rating fetcher
 # =========================
@@ -541,7 +457,8 @@ def build_suggestions(
     limit: int = 5,
 ) -> Tuple[List[Artist], float]:
     """
-    Genera sugerencias basadas en artistas seleccionados.
+    Genera sugerencias usando artist.getInfo de Last.fm (trae 5 similares incluidos).
+    Busca imágenes en Discogs solo para los top artistas sugeridos.
     Devuelve (lista de artistas sugeridos, tiempo total en segundos).
     """
     start_time = time.time()
@@ -549,49 +466,52 @@ def build_suggestions(
     if not selected or limit <= 0:
         return [], 0.0
 
-    base_weight = 0.6
-    step = 0.3
+    candidate_counts: Dict[str, int] = {}
+    candidate_names: Dict[str, str] = {}
 
-    candidate_scores: Dict[Tuple[Optional[str], str], float] = {}
-    candidate_artist_data: Dict[Tuple[Optional[str], str], Artist] = {}
-
-    for idx, seed in enumerate(selected):
-        weight = base_weight + step * idx
-        similars, _ = client.get_similar_artists(name=seed.name, mbid=seed.mbid, limit=50)
-
-        for rank, artist in enumerate(similars):
-            key = (artist.mbid, artist.name.lower())
-
-            if artist.name.lower() == seed.name.lower() and (
-                seed.mbid is None or artist.mbid == seed.mbid
-            ):
+    for seed in selected:
+        artist_info = client.get_artist_info(name=seed.name, mbid=seed.mbid)
+        if not artist_info:
+            continue
+        
+        similars = artist_info.get("similar", {}).get("artist", [])
+        if isinstance(similars, dict):
+            similars = [similars]
+        
+        for sim in similars:
+            sim_name = sim.get("name")
+            if not sim_name:
                 continue
-
-            score_increment = weight / float(rank + 1)
-            candidate_scores[key] = candidate_scores.get(key, 0.0) + score_increment
-
-            if key not in candidate_artist_data:
-                candidate_artist_data[key] = artist
-
-    selected_keys = {(s.mbid, s.name.lower()) for s in selected}
-    for sel_key in selected_keys:
-        candidate_scores.pop(sel_key, None)
-        candidate_artist_data.pop(sel_key, None)
-
+            
+            sim_name_lower = sim_name.lower()
+            
+            if sim_name_lower == seed.name.lower():
+                continue
+            
+            candidate_counts[sim_name_lower] = candidate_counts.get(sim_name_lower, 0) + 1
+            if sim_name_lower not in candidate_names:
+                candidate_names[sim_name_lower] = sim_name
+    
+    selected_keys_lower = {s.name.lower() for s in selected}
+    for sel_key in selected_keys_lower:
+        candidate_counts.pop(sel_key, None)
+        candidate_names.pop(sel_key, None)
+    
     sorted_candidates = sorted(
-        candidate_scores.items(),
+        candidate_counts.items(),
         key=lambda kv: kv[1],
         reverse=True,
     )
-
+    
+    top_artist_names = [candidate_names[name_lower] for name_lower, _ in sorted_candidates[:limit]]
+    
+    images_map = client.get_similar_artist_images_discogs(top_artist_names)
+    
     suggestions: List[Artist] = []
-    for key, _score in sorted_candidates:
-        artist = candidate_artist_data.get(key)
-        if artist:
-            suggestions.append(artist)
-        if len(suggestions) >= limit:
-            break
-
+    for name in top_artist_names:
+        image_url = images_map.get(name)
+        suggestions.append(Artist(name=name, mbid=None, image_url=image_url))
+    
     elapsed = time.time() - start_time
     return suggestions, elapsed
 
@@ -691,7 +611,7 @@ def main():
 
         search_results: List[Artist] = []
         if st.session_state.search_box and len(st.session_state.search_box.strip()) >= 2:
-            search_results, search_time = client.search_artists(st.session_state.search_box.strip(), limit=5)
+            search_results, search_time = client.search_artists_discogs(st.session_state.search_box.strip(), limit=5)
             st.session_state.last_search_time = search_time
 
         if query and not search_results:
