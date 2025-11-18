@@ -7,7 +7,17 @@ This project is a comprehensive vinyl recommendation system that leverages Spoti
 I want to prioritize a clear, concise, and professional communication style. For development, I prefer an iterative approach, focusing on delivering core functionality first and then enhancing it. I value detailed explanations, especially for complex architectural decisions. Please ask for my approval before making any major changes to the system architecture or core functionalities.
 
 ## Recent Changes (November 18, 2025)
-**Unificación de Opciones de Recomendaciones y Sistema de Merge Automático (LATEST):**
+**Sistema de Fallback Triple a Discogs y Progreso en Tiempo Real (LATEST):**
+- **Fallback automático a Discogs**: Cuando MusicBrainz no tiene discogs_master_id, el sistema busca automáticamente en Discogs API (primero masters por artista+título, luego releases si no encuentra master)
+- **Soporte completo releases**: StudioAlbum ahora guarda tanto discogs_master_id como discogs_release_id, con campo discogs_type para diferenciar
+- **Progreso en tiempo real**: Sistema de polling cada 500ms que muestra "Procesando artista X de Y..." durante generación de recomendaciones
+- **Gateway proxy**: Nuevo endpoint `/api/recommendations/progress` que hace proxy al servicio de recommender de forma segura
+- **Timeout inteligente**: Frontend cancela polling automáticamente después de 60 segundos con manejo de errores robusto
+- **Cobertura mejorada**: Ahora funciona con artistas como Los Fresones Rebeldes que carecen de enlaces MusicBrainz→Discogs
+- **Nota técnica MVP**: Progress tracking usa estado global (single-flight), aceptable para MVP pero documentado para mejora futura con per-request IDs
+- **Pendiente futuro**: Tests automatizados para fallbacks y monitoreo de timeouts en producción
+
+**Unificación de Opciones de Recomendaciones y Sistema de Merge Automático:**
 - **Sistema unificado**: Ambas opciones (Spotify y búsqueda de artistas) siempre disponibles y funcionan juntas
 - **Merge automático**: Cuando usuario conecta Spotify después de seleccionar artistas, las recomendaciones se mezclan automáticamente 1:1
 - **Persistencia de selección**: Los artistas seleccionados se guardan en localStorage y se mantienen al conectar Spotify
