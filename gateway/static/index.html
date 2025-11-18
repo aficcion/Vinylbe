@@ -263,7 +263,7 @@
         }
 
         .detail-container {
-            max-width: 900px;
+            max-width: 1400px;
             margin: 0 auto;
             padding: 2rem;
         }
@@ -289,8 +289,8 @@
 
         .detail-content {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 3rem;
+            grid-template-columns: 400px 1fr;
+            gap: 4rem;
             align-items: start;
         }
 
@@ -401,15 +401,18 @@
             list-style: none;
             counter-reset: track-counter;
             padding: 0;
+            max-height: 400px;
+            overflow-y: auto;
         }
 
         .tracklist li {
             counter-increment: track-counter;
-            padding: 0.75rem 0;
+            padding: 0.6rem 0;
             border-bottom: 1px solid var(--border-color);
             display: flex;
             justify-content: space-between;
             align-items: center;
+            font-size: 0.95rem;
         }
 
         .tracklist li:last-child {
@@ -426,9 +429,32 @@
 
         .tracklist .duration {
             color: var(--text-secondary);
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             margin-left: auto;
             padding-left: 1rem;
+            white-space: nowrap;
+        }
+        
+        .info-message {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin: 1rem 0;
+        }
+        
+        .info-message.warning {
+            background: #fff3cd;
+            border-color: #ffc107;
+            color: #856404;
+        }
+        
+        [data-theme="dark"] .info-message.warning {
+            background: #332701;
+            border-color: #664d03;
+            color: #ffecb5;
         }
 
         .stores-section {

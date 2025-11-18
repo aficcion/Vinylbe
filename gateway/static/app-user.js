@@ -163,14 +163,24 @@ function renderDetailPricing(pricing, spotifyUrl) {
         `;
     }
     
+    // Discogs information section
+    if (pricing.discogs_type) {
+        const typeLabel = pricing.discogs_type === 'master' ? 'Master' : 'Release';
+        html += `<div class="info-message">ℹ️ Encontrado en Discogs como ${typeLabel}</div>`;
+    } else if (pricing.discogs_url === null && pricing.discogs_id === null) {
+        html += `<div class="info-message warning">⚠️ No se encontró este álbum en Discogs</div>`;
+    }
+    
     // Tracklist section
     if (pricing.tracklist && pricing.tracklist.length > 0) {
         html += '<div class="tracklist-section"><h3>Lista de Canciones</h3><ol class="tracklist">';
         pricing.tracklist.forEach(track => {
-            const duration = track.duration ? ` <span class="duration">(${track.duration})</span>` : '';
-            html += `<li>${track.title}${duration}</li>`;
+            const duration = track.duration ? ` <span class="duration">${track.duration}</span>` : '';
+            html += `<li><span>${track.title}</span>${duration}</li>`;
         });
         html += '</ol></div>';
+    } else if (pricing.discogs_type) {
+        html += `<div class="info-message warning">⚠️ No se encontró tracklist en Discogs</div>`;
     }
     
     // eBay price section
@@ -180,20 +190,31 @@ function renderDetailPricing(pricing, spotifyUrl) {
         
         html += `
             <div class="price-highlight">
-                <div class="price-label">Mejor precio eBay</div>
+                <div class="price-label">Mejor precio eBay (EU)</div>
                 <div class="price-value">${totalPrice} EUR</div>
                 <a href="${url}" target="_blank" class="btn-primary">
                     🛒 Comprar en eBay
                 </a>
             </div>
         `;
+    } else {
+        html += `<div class="info-message">ℹ️ No hay ofertas de eBay disponibles en este momento</div>`;
     }
     
-    // Discogs link
+    // Discogs marketplace link
     if (pricing.discogs_sell_url) {
         html += `
             <a href="${pricing.discogs_sell_url}" target="_blank" class="btn-secondary">
-                🎵 Ver en Discogs
+                🎵 Ver marketplace en Discogs
+            </a>
+        `;
+    }
+    
+    // Discogs detail link
+    if (pricing.discogs_url) {
+        html += `
+            <a href="${pricing.discogs_url}" target="_blank" class="btn-secondary">
+                📖 Ver detalles en Discogs
             </a>
         `;
     }
@@ -209,7 +230,7 @@ function renderDetailPricing(pricing, spotifyUrl) {
         
         const storeEntries = Object.entries(pricing.local_stores);
         if (storeEntries.length > 0) {
-            html += '<div class="stores-section"><h3>Tiendas Locales</h3>';
+            html += '<div class="stores-section"><h3>Tiendas Locales en Madrid</h3>';
             storeEntries.forEach(([key, url]) => {
                 const name = storeNames[key] || key;
                 html += `
@@ -220,10 +241,6 @@ function renderDetailPricing(pricing, spotifyUrl) {
             });
             html += '</div>';
         }
-    }
-    
-    if (!spotifyUrl && !pricing.tracklist?.length && !pricing.ebay_offer && !pricing.discogs_sell_url && (!pricing.local_stores || Object.keys(pricing.local_stores).length === 0)) {
-        html = '<p class="no-pricing">No hay información disponible en este momento</p>';
     }
     
     return html;

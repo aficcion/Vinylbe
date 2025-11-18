@@ -54,6 +54,43 @@ class DiscogsClient:
         query_string = "&".join(f"{k}={v}" for k, v in debug_params.items())
         return f"{url}?{query_string}"
     
+    def _normalize_album_title(self, title: str) -> str:
+        """
+        Normalize album title by removing common suffixes added by streaming platforms.
+        This improves matching with Discogs database.
+        
+        Examples:
+        - "Remain in Light (Deluxe Version)" -> "Remain in Light"
+        - "Dark Side of the Moon (Remastered)" -> "Dark Side of the Moon"
+        """
+        import re
+        
+        # Common suffixes to remove (case-insensitive)
+        suffixes = [
+            r'\s*\(Deluxe(?:\s+(?:Edition|Version))?\)',
+            r'\s*\(Remastered(?:\s+\d{4})?\)',
+            r'\s*\(Anniversary(?:\s+Edition)?\)',
+            r'\s*\(Expanded(?:\s+Edition)?\)',
+            r'\s*\(Special(?:\s+Edition)?\)',
+            r'\s*\(Limited(?:\s+Edition)?\)',
+            r'\s*\(\d+(?:th|st|nd|rd)?\s+Anniversary(?:\s+Edition)?\)',
+            r'\s*\(Bonus\s+Track(?:s)?(?:\s+Edition)?\)',
+            r'\s*\(Platinum\s+Edition\)',
+            r'\s*\(Standard\s+Edition\)',
+            r'\s*\(Explicit\)',
+            r'\s*\[Remastered\]',
+            r'\s*-\s*Remastered(?:\s+\d{4})?',
+        ]
+        
+        normalized = title
+        for suffix_pattern in suffixes:
+            normalized = re.sub(suffix_pattern, '', normalized, flags=re.IGNORECASE)
+        
+        # Clean up extra whitespace
+        normalized = ' '.join(normalized.split())
+        
+        return normalized.strip()
+    
     async def search_release(self, artist: str, title: str) -> List[dict]:
         if not self.client:
             raise ValueError("Client not started")
@@ -214,72 +251,131 @@ class DiscogsClient:
     
     async def get_master_link(self, artist: str, album: str) -> Optional[Dict]:
         """
-        Busca el master ID de un álbum en Discogs y retorna el link al master.
+        Busca un álbum en Discogs con fallback inteligente.
+        
+        Estrategia:
+        1. Normaliza el título (elimina sufijos como "Deluxe", "Remastered", etc.)
+        2. Busca primero tipo "master"
+        3. Si no hay resultados, busca tipo "release"
+        4. Retorna el primero que encuentre con su tipo correcto
+        
+        Returns dict con:
+        - type: "master" o "release"
+        - master_id o release_id
+        - master_url o release_url  
         """
         if not self.client:
             raise ValueError("Client not started")
         
+        # Normalizar el título del álbum
+        normalized_album = self._normalize_album_title(album)
+        log_event("discogs-client", "INFO", f"Normalized album title: '{album}' -> '{normalized_album}'")
+        
+        # Intentar buscar master primero
         await self._rate_limit()
         
-        params = self._get_auth_params(
+        params_master = self._get_auth_params(
             artist=artist,
-            release_title=album,
+            release_title=normalized_album,
             type="master",
         )
         
         url = f"{self.api_base}/database/search"
-        debug_url = self._build_debug_url(url, params)
+        debug_url_master = self._build_debug_url(url, params_master)
         
         try:
-            resp = await self.client.get(url, params=params)
+            resp = await self.client.get(url, params=params_master)
             resp.raise_for_status()
             data = resp.json()
             results = data.get("results", [])
             
-            if not results:
-                return {
-                    "master_id": None,
-                    "master_url": None,
-                    "message": "No master found",
-                    "debug_info": {
-                        "request_url": debug_url,
-                        "params_sent": {k: v for k, v in params.items() if k not in ["key", "secret"]}
+            if results:
+                first_result = results[0]
+                master_id = first_result.get("master_id") or first_result.get("id")
+                
+                if master_id:
+                    master_url = f"https://www.discogs.com/master/{master_id}"
+                    log_event("discogs-client", "INFO", f"Found master {master_id} for '{album}'")
+                    
+                    return {
+                        "type": "master",
+                        "id": master_id,
+                        "master_id": master_id,  # backward compatibility
+                        "url": master_url,
+                        "master_url": master_url,  # backward compatibility
+                        "title": first_result.get("title", ""),
+                        "debug_info": {
+                            "request_url": debug_url_master,
+                            "normalized_title": normalized_album,
+                            "search_type": "master"
+                        }
                     }
-                }
             
-            first_result = results[0]
-            master_id = first_result.get("master_id") or first_result.get("id")
+            # No master found, try release as fallback
+            log_event("discogs-client", "INFO", f"No master found for '{album}', trying release fallback")
             
-            if not master_id:
-                return {
-                    "master_id": None,
-                    "master_url": None,
-                    "message": "No master ID found in results",
-                    "debug_info": {
-                        "request_url": debug_url,
-                        "params_sent": {k: v for k, v in params.items() if k not in ["key", "secret"]}
+            await self._rate_limit()
+            
+            params_release = self._get_auth_params(
+                artist=artist,
+                release_title=normalized_album,
+                format="Vinyl",
+                type="release",
+            )
+            
+            debug_url_release = self._build_debug_url(url, params_release)
+            
+            resp = await self.client.get(url, params=params_release)
+            resp.raise_for_status()
+            data = resp.json()
+            results = data.get("results", [])
+            
+            if results:
+                first_result = results[0]
+                release_id = first_result.get("id")
+                
+                if release_id:
+                    release_url = f"https://www.discogs.com/release/{release_id}"
+                    log_event("discogs-client", "INFO", f"Found release {release_id} for '{album}'")
+                    
+                    return {
+                        "type": "release",
+                        "id": release_id,
+                        "release_id": release_id,
+                        "url": release_url,
+                        "release_url": release_url,
+                        "title": first_result.get("title", ""),
+                        "debug_info": {
+                            "request_url": debug_url_release,
+                            "normalized_title": normalized_album,
+                            "search_type": "release (fallback)"
+                        }
                     }
-                }
             
-            master_url = f"https://www.discogs.com/master/{master_id}"
-            
+            # Neither master nor release found
+            log_event("discogs-client", "WARNING", f"No master or release found for '{album}'")
             return {
-                "master_id": master_id,
-                "master_url": master_url,
-                "title": first_result.get("title", ""),
+                "type": None,
+                "id": None,
+                "url": None,
+                "message": "No master or release found",
                 "debug_info": {
-                    "request_url": debug_url,
-                    "params_sent": {k: v for k, v in params.items() if k not in ["key", "secret"]}
+                    "original_title": album,
+                    "normalized_title": normalized_album,
+                    "searches_attempted": ["master", "release"]
                 }
             }
+            
         except Exception as e:
-            log_event("discogs-client", "ERROR", f"Master link fetch failed: {str(e)}")
+            log_event("discogs-client", "ERROR", f"Master/release link fetch failed: {str(e)}")
             return {
-                "master_id": None,
-                "master_url": None,
+                "type": None,
+                "id": None,
+                "url": None,
                 "message": f"Error: {str(e)}",
                 "debug_info": {
-                    "request_url": debug_url,
+                    "original_title": album,
+                    "normalized_title": normalized_album,
                     "error": str(e)
                 }
             }
@@ -327,6 +423,58 @@ class DiscogsClient:
             log_event("discogs-client", "ERROR", f"Tracklist fetch failed for master {master_id}: {str(e)}")
             return {
                 "master_id": master_id,
+                "tracklist": [],
+                "message": f"Error: {str(e)}",
+                "debug_info": {
+                    "request_url": debug_url,
+                    "error": str(e)
+                }
+            }
+    
+    async def get_release_tracklist(self, release_id: int) -> Optional[Dict]:
+        """
+        Obtiene el tracklist de un release ID desde Discogs.
+        Usado como fallback cuando no hay master disponible.
+        """
+        if not self.client:
+            raise ValueError("Client not started")
+        
+        await self._rate_limit()
+        
+        params = self._get_auth_params()
+        url = f"{self.api_base}/releases/{release_id}"
+        debug_url = self._build_debug_url(url, params)
+        
+        try:
+            resp = await self.client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            
+            tracklist = data.get("tracklist", [])
+            
+            # Formatear el tracklist igual que en master
+            formatted_tracklist = []
+            for track in tracklist:
+                formatted_tracklist.append({
+                    "position": track.get("position", ""),
+                    "title": track.get("title", ""),
+                    "duration": track.get("duration", "")
+                })
+            
+            return {
+                "release_id": release_id,
+                "tracklist": formatted_tracklist,
+                "title": data.get("title", ""),
+                "year": data.get("year"),
+                "debug_info": {
+                    "request_url": debug_url,
+                    "params_sent": {k: v for k, v in params.items() if k not in ["key", "secret"]}
+                }
+            }
+        except Exception as e:
+            log_event("discogs-client", "ERROR", f"Tracklist fetch failed for release {release_id}: {str(e)}")
+            return {
+                "release_id": release_id,
                 "tracklist": [],
                 "message": f"Error: {str(e)}",
                 "debug_info": {

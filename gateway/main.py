@@ -172,31 +172,46 @@ async def get_album_pricing(artist: str, album: str):
         else:
             stores_data = stores_resp.json()
         
-        # If we have a master_id, fetch the tracklist
-        master_id = discogs_data.get("master_id")
+        # Fetch tracklist based on type (master or release)
         tracklist_data = {"tracklist": []}
+        discogs_sell_url = None
+        discogs_url = None
+        discogs_type = discogs_data.get("type")
+        discogs_id = discogs_data.get("id")
         
-        if master_id:
+        if discogs_type == "master" and discogs_id:
             try:
-                tracklist_resp = await http_client.get(f"{DISCOGS_SERVICE_URL}/master-tracklist/{master_id}")
+                tracklist_resp = await http_client.get(f"{DISCOGS_SERVICE_URL}/master-tracklist/{discogs_id}")
                 tracklist_data = tracklist_resp.json()
-                log_event("gateway", "INFO", f"Tracklist fetched for master {master_id}: {len(tracklist_data.get('tracklist', []))} tracks")
+                log_event("gateway", "INFO", f"Tracklist fetched for master {discogs_id}: {len(tracklist_data.get('tracklist', []))} tracks")
             except Exception as e:
-                log_event("gateway", "WARNING", f"Tracklist fetch failed: {str(e)}")
+                log_event("gateway", "WARNING", f"Tracklist fetch failed for master: {str(e)}")
+            
+            discogs_sell_url = f"https://www.discogs.com/sell/list?master_id={discogs_id}&currency=EUR&format=Vinyl"
+            discogs_url = discogs_data.get("url")
+            
+        elif discogs_type == "release" and discogs_id:
+            try:
+                tracklist_resp = await http_client.get(f"{DISCOGS_SERVICE_URL}/release-tracklist/{discogs_id}")
+                tracklist_data = tracklist_resp.json()
+                log_event("gateway", "INFO", f"Tracklist fetched for release {discogs_id}: {len(tracklist_data.get('tracklist', []))} tracks")
+            except Exception as e:
+                log_event("gateway", "WARNING", f"Tracklist fetch failed for release: {str(e)}")
+            
+            discogs_sell_url = f"https://www.discogs.com/sell/list?release_id={discogs_id}&currency=EUR&format=Vinyl"
+            discogs_url = discogs_data.get("url")
+        else:
+            log_event("gateway", "INFO", f"No Discogs master or release found for {artist} - {album}")
         
         elapsed = time.time() - start_time
-        log_event("gateway", "INFO", f"Pricing fetched for {artist} - {album} in {elapsed:.2f}s")
-        
-        # Generate sell list URL with master_id
-        discogs_sell_url = None
-        if master_id:
-            discogs_sell_url = f"https://www.discogs.com/sell/list?master_id={master_id}&currency=EUR&format=Vinyl"
+        log_event("gateway", "INFO", f"Album info fetched for {artist} - {album} in {elapsed:.2f}s (type: {discogs_type or 'none'})")
         
         return {
             "artist": artist,
             "album": album,
-            "discogs_master_url": discogs_data.get("master_url"),
-            "discogs_master_id": master_id,
+            "discogs_type": discogs_type,
+            "discogs_id": discogs_id,
+            "discogs_url": discogs_url,
             "discogs_sell_url": discogs_sell_url,
             "discogs_title": discogs_data.get("title"),
             "tracklist": tracklist_data.get("tracklist", []),
@@ -205,6 +220,7 @@ async def get_album_pricing(artist: str, album: str):
             "request_time_seconds": round(elapsed, 2),
             "debug_info": {
                 "discogs": discogs_data.get("debug_info"),
+                "search_type": discogs_type,
                 "parallelization": "3 concurrent requests (Discogs + eBay + Local Stores) + tracklist fetch"
             }
         }

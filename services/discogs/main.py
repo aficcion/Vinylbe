@@ -125,3 +125,20 @@ async def get_master_tracklist(master_id: int):
         log_event("discogs-service", "INFO", f"No tracklist found for master {master_id}")
     
     return result
+
+
+@app.get("/release-tracklist/{release_id}")
+async def get_release_tracklist(release_id: int):
+    if not discogs_client:
+        raise HTTPException(status_code=500, detail="Discogs client not initialized")
+    
+    log_event("discogs-service", "INFO", f"Fetching tracklist for release: {release_id}")
+    
+    result = await discogs_client.get_release_tracklist(release_id)
+    
+    if result.get("tracklist"):
+        log_event("discogs-service", "INFO", f"Tracklist found for release {release_id}: {len(result['tracklist'])} tracks")
+    else:
+        log_event("discogs-service", "INFO", f"No tracklist found for release {release_id}")
+    
+    return result
