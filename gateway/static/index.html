@@ -3,109 +3,412 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vinyl Recommendation System - Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Vinilogy - Descubre Vinilos</title>
+    <style>
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f5f5f5;
+            --text-primary: #000000;
+            --text-secondary: #666666;
+            --border-color: #e0e0e0;
+            --accent-color: #1DB954;
+            --card-bg: #ffffff;
+        }
+
+        [data-theme="dark"] {
+            --bg-primary: #000000;
+            --bg-secondary: #1a1a1a;
+            --text-primary: #ffffff;
+            --text-secondary: #999999;
+            --border-color: #333333;
+            --accent-color: #1DB954;
+            --card-bg: #0a0a0a;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            transition: background-color 0.3s, color 0.3s;
+            min-height: 100vh;
+        }
+
+        .header {
+            padding: 1.5rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .theme-toggle {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            transition: all 0.2s;
+        }
+
+        .theme-toggle:hover {
+            background: var(--border-color);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .hero {
+            text-align: center;
+            padding: 6rem 2rem;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            font-weight: 800;
+            margin-bottom: 1.5rem;
+            line-height: 1.1;
+            letter-spacing: -1px;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+            margin-bottom: 3rem;
+            line-height: 1.6;
+        }
+
+        .spotify-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            background: var(--accent-color);
+            color: white;
+            padding: 1rem 2.5rem;
+            border-radius: 50px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(29, 185, 84, 0.3);
+        }
+
+        .spotify-btn:hover {
+            background: #1ed760;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(29, 185, 84, 0.4);
+        }
+
+        .spotify-btn:active {
+            transform: translateY(0);
+        }
+
+        .spotify-icon {
+            width: 24px;
+            height: 24px;
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            margin-top: 4rem;
+            padding: 0 2rem;
+        }
+
+        .feature-card {
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .feature-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .feature-card h3 {
+            font-size: 1.25rem;
+            margin-bottom: 0.75rem;
+            font-weight: 600;
+        }
+
+        .feature-card p {
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        .loading-state {
+            display: none;
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .loading-state.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid var(--border-color);
+            border-top: 3px solid var(--accent-color);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+
+            .hero p {
+                font-size: 1.1rem;
+            }
+
+            .features {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        #recommendations-view {
+            display: none;
+        }
+
+        #recommendations-view.active {
+            display: block;
+        }
+
+        .recommendations-header {
+            margin-bottom: 2rem;
+        }
+
+        .recommendations-header h2 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .recommendations-header p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        .albums-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .album-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .album-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+        }
+
+        .album-cover {
+            width: 100%;
+            aspect-ratio: 1;
+            object-fit: cover;
+            background: var(--bg-secondary);
+        }
+
+        .album-info {
+            padding: 1rem;
+        }
+
+        .album-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .album-artist {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .album-details {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            border-top: 1px solid var(--border-color);
+            margin-top: 0;
+        }
+
+        .album-card.expanded .album-details {
+            max-height: 500px;
+            margin-top: 1rem;
+        }
+
+        .album-details-content {
+            padding: 1rem;
+        }
+
+        .price-section {
+            margin-bottom: 1rem;
+        }
+
+        .price-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.25rem;
+        }
+
+        .price-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent-color);
+        }
+
+        .links-section {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .link-btn {
+            display: block;
+            padding: 0.75rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            text-decoration: none;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        .link-btn:hover {
+            background: var(--border-color);
+        }
+
+        .skeleton {
+            background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--border-color) 50%, var(--bg-secondary) 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s infinite;
+        }
+
+        @keyframes loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        @media (max-width: 1024px) {
+            .albums-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .albums-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 480px) {
+            .albums-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
 </head>
-<body class="bg-gray-100">
-    <div class="container mx-auto px-4 py-8">
-        <h1 class="text-4xl font-bold mb-8 text-gray-800">🎵 Vinyl Recommendation System</h1>
-        
-        <!-- Service Status -->
-        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-            <h2 class="text-2xl font-semibold mb-4">Service Status</h2>
-            <div id="service-status" class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div class="text-center">
-                    <div class="text-sm text-gray-600">Gateway</div>
-                    <div id="status-gateway" class="mt-2">
-                        <span class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
-                        <span class="ml-2 text-sm">Checking...</span>
-                    </div>
-                </div>
-                <div class="text-center">
-                    <div class="text-sm text-gray-600">Spotify Service</div>
-                    <div id="status-spotify" class="mt-2">
-                        <span class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
-                        <span class="ml-2 text-sm">Checking...</span>
-                    </div>
-                </div>
-                <div class="text-center">
-                    <div class="text-sm text-gray-600">Discogs Service</div>
-                    <div id="status-discogs" class="mt-2">
-                        <span class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
-                        <span class="ml-2 text-sm">Checking...</span>
-                    </div>
-                </div>
-                <div class="text-center">
-                    <div class="text-sm text-gray-600">Recommender</div>
-                    <div id="status-recommender" class="mt-2">
-                        <span class="inline-block w-3 h-3 rounded-full bg-gray-400"></span>
-                        <span class="ml-2 text-sm">Checking...</span>
-                    </div>
-                </div>
-            </div>
+<body>
+    <div class="header">
+        <div class="logo">Vinilogy</div>
+        <button class="theme-toggle" onclick="toggleTheme()">🌓 Cambiar tema</button>
+    </div>
+
+    <div id="landing-view">
+        <div class="hero">
+            <h1>Descubre Vinilos Basados en tu Música</h1>
+            <p>Conecta tu Spotify y encuentra recomendaciones de vinilos personalizadas basadas en lo que escuchas</p>
+            <button class="spotify-btn" onclick="loginSpotify()">
+                <svg class="spotify-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
+                </svg>
+                Conectar con Spotify
+            </button>
         </div>
 
-        <!-- Test Panel -->
-        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-            <h2 class="text-2xl font-semibold mb-4">Test Panel</h2>
-            <div class="space-y-4">
-                <div>
-                    <button onclick="testSpotifyLogin()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
-                        🔐 Login with Spotify
-                    </button>
-                    <span id="spotify-login-result" class="ml-4 text-sm"></span>
-                </div>
-                <div>
-                    <button onclick="testRecommendation()" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
-                        🎧 Get Vinyl Recommendations
-                    </button>
-                    <span id="recommend-result" class="ml-4 text-sm"></span>
-                </div>
-            </div>
+        <div class="loading-state" id="loading">
+            <div class="spinner"></div>
+            <p>Cargando tus recomendaciones...</p>
         </div>
 
-        <!-- Request Log -->
-        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-            <h2 class="text-2xl font-semibold mb-4">📡 Discogs Request Log</h2>
-            <div id="request-log" class="bg-gray-50 rounded border border-gray-200 max-h-96 overflow-y-auto">
-                <div class="text-sm text-gray-500 p-4">No hay peticiones registradas</div>
+        <div class="features">
+            <div class="feature-card">
+                <div class="feature-icon">🎵</div>
+                <h3>Personalizado</h3>
+                <p>Recomendaciones basadas en tu historial de escucha de Spotify</p>
             </div>
-        </div>
-
-        <!-- Progress Tracker -->
-        <div id="progress-tracker" class="bg-white rounded-lg shadow-md p-6 mb-8 hidden">
-            <h2 class="text-2xl font-semibold mb-4">Recommendation Progress</h2>
-            <div class="space-y-3">
-                <div id="step-1" class="flex items-center">
-                    <span class="inline-block w-6 h-6 rounded-full bg-gray-300 mr-3"></span>
-                    <span>Fetching top tracks from Spotify...</span>
-                </div>
-                <div id="step-2" class="flex items-center">
-                    <span class="inline-block w-6 h-6 rounded-full bg-gray-300 mr-3"></span>
-                    <span>Fetching top artists from Spotify...</span>
-                </div>
-                <div id="step-3" class="flex items-center">
-                    <span class="inline-block w-6 h-6 rounded-full bg-gray-300 mr-3"></span>
-                    <span>Scoring tracks...</span>
-                </div>
-                <div id="step-4" class="flex items-center">
-                    <span class="inline-block w-6 h-6 rounded-full bg-gray-300 mr-3"></span>
-                    <span>Scoring artists...</span>
-                </div>
-                <div id="step-5" class="flex items-center">
-                    <span class="inline-block w-6 h-6 rounded-full bg-gray-300 mr-3"></span>
-                    <span>Aggregating and filtering albums...</span>
-                </div>
+            <div class="feature-card">
+                <div class="feature-icon">💿</div>
+                <h3>Vinilos Reales</h3>
+                <p>Encuentra vinilos disponibles en el mercado con precios actualizados</p>
             </div>
-        </div>
-
-        <!-- Results -->
-        <div id="results-container" class="hidden">
-            <h2 class="text-2xl font-semibold mb-4">Recommended Albums</h2>
-            <div id="results" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+            <div class="feature-card">
+                <div class="feature-icon">🛒</div>
+                <h3>Fácil Compra</h3>
+                <p>Links directos a Discogs, eBay y tiendas locales</p>
+            </div>
         </div>
     </div>
 
-    <script src="/static/app.js"></script>
+    <div id="recommendations-view" class="container">
+        <div class="recommendations-header">
+            <h2>Recomendaciones</h2>
+            <p id="last-updated">Basado en tu escucha</p>
+        </div>
+        <div class="albums-grid" id="albums-container">
+        </div>
+    </div>
+
+    <script src="/static/app-user.js"></script>
 </body>
 </html>

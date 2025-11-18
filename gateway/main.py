@@ -53,6 +53,11 @@ async def root():
     return FileResponse(static_path / "index.html")
 
 
+@app.get("/admin")
+async def admin():
+    return FileResponse(static_path / "admin.html")
+
+
 @app.get("/health")
 async def health_check():
     if not http_client:
