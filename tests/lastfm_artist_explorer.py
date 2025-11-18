@@ -51,6 +51,8 @@ _RE_DISCOGS_MASTER = re.compile(
 )
 
 # Hashes conocidos de placeholders genéricos de Last.fm
+# Estos se filtrarán para mostrar el emoji 🎵 en lugar de un placeholder genérico
+# Nota: Last.fm actualmente tiene problemas y devuelve este placeholder para casi todos los artistas
 LASTFM_PLACEHOLDER_HASHES = {
     "2a96cbd8b46e442fc41c2b86b821562f",
 }
