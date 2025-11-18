@@ -35,12 +35,12 @@ async function handleSpotifyCallback() {
     if (auth === 'success') {
         window.history.replaceState({}, document.title, '/');
         localStorage.removeItem('vinilogy_auth_pending');
-        showLoading(true);
         
         const savedArtists = localStorage.getItem('selected_artist_names');
         if (savedArtists) {
             await loadMixedRecommendations(JSON.parse(savedArtists));
         } else {
+            showLoading(true);
             await loadRecommendations();
         }
     } else if (auth === 'error') {
@@ -65,6 +65,8 @@ function showProgressModal(title = 'Generando Recomendaciones') {
     const modal = document.getElementById('progress-modal');
     const titleEl = document.getElementById('progress-title');
     
+    showLoading(false);
+    
     titleEl.textContent = title;
     modal.classList.add('active');
     progressStartTime = Date.now();
@@ -75,6 +77,7 @@ function showProgressModal(title = 'Generando Recomendaciones') {
 function hideProgressModal() {
     const modal = document.getElementById('progress-modal');
     modal.classList.remove('active');
+    showLoading(false);
 }
 
 function updateProgressUI(current, total, status, currentArtist = '') {
@@ -122,6 +125,7 @@ async function startProgressMonitoring(contextTitle = 'Generando Recomendaciones
                 console.warn('Progress monitoring timed out');
                 stopProgressMonitoring();
                 hideProgressModal();
+                alert('La operación está tardando más de lo esperado. Por favor, intenta de nuevo.');
                 return;
             }
             
@@ -141,8 +145,12 @@ async function startProgressMonitoring(contextTitle = 'Generando Recomendaciones
                     statusMsg,
                     progress.current_artist || ''
                 );
-            } else if (progress.status === 'completed' || progress.status === 'idle' || progress.status === 'error') {
+            } else if (progress.status === 'completed' || progress.status === 'idle') {
                 stopProgressMonitoring();
+            } else if (progress.status === 'error') {
+                stopProgressMonitoring();
+                hideProgressModal();
+                alert('Hubo un error al procesar las recomendaciones. Por favor, intenta de nuevo.');
             }
         } catch (error) {
             console.error('Error fetching progress:', error);
