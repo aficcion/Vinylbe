@@ -18,28 +18,25 @@ async function loginSpotify() {
         const data = await response.json();
         
         if (data.authorize_url) {
-            // Open in popup window
             const width = 600;
             const height = 700;
             const left = (screen.width / 2) - (width / 2);
             const top = (screen.height / 2) - (height / 2);
             
-            localStorage.setItem('vinilogy_auth_pending', 'true');
+            window.authPending = true;
             const authWindow = window.open(
                 data.authorize_url,
                 'spotify-auth',
                 `width=${width},height=${height},left=${left},top=${top}`
             );
             
-            // Poll for auth completion
-            const pollInterval = setInterval(async () => {
+            const pollInterval = setInterval(() => {
                 if (authWindow.closed) {
                     clearInterval(pollInterval);
-                    if (localStorage.getItem('vinilogy_auth_pending') === 'true') {
-                        localStorage.removeItem('vinilogy_auth_pending');
-                        // Check if auth succeeded by trying to load recommendations
+                    if (window.authPending) {
+                        window.authPending = false;
                         showLoading(true);
-                        await loadRecommendations();
+                        setTimeout(() => loadRecommendations(), 500);
                     }
                 }
             }, 500);
@@ -50,25 +47,39 @@ async function loginSpotify() {
     }
 }
 
-// Handle Spotify callback
+// Handle Spotify callback in popup
 async function handleSpotifyCallback() {
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
     
-    if (code) {
+    if (code && window.opener) {
         try {
             const response = await fetch(`/auth/callback?code=${code}`);
             const data = await response.json();
             
             if (data.status === 'success') {
-                localStorage.setItem('vinilogy_auth_pending', 'false');
-                window.close(); // Close popup
+                if (window.opener) {
+                    window.opener.authPending = true;
+                }
+                window.close();
             } else {
-                alert('Error al autenticar. Por favor, cierra esta ventana e intenta de nuevo.');
+                document.body.innerHTML = `
+                    <div style="text-align: center; padding: 2rem; font-family: sans-serif;">
+                        <h2>Error al autenticar</h2>
+                        <p>Por favor, cierra esta ventana e intenta de nuevo.</p>
+                        <button onclick="window.close()" style="margin-top: 1rem; padding: 0.5rem 1rem; cursor: pointer;">Cerrar</button>
+                    </div>
+                `;
             }
         } catch (error) {
             console.error('Error in callback:', error);
-            alert('Error al completar la autenticación.');
+            document.body.innerHTML = `
+                <div style="text-align: center; padding: 2rem; font-family: sans-serif;">
+                    <h2>Error</h2>
+                    <p>Hubo un problema al completar la autenticación.</p>
+                    <button onclick="window.close()" style="margin-top: 1rem; padding: 0.5rem 1rem; cursor: pointer;">Cerrar</button>
+                </div>
+            `;
         }
     }
 }
@@ -78,7 +89,7 @@ function showLoading(show) {
     document.getElementById('loading').classList.toggle('active', show);
 }
 
-// Load recommendations automatically
+// Load recommendations (without pricing)
 async function loadRecommendations() {
     showLoading(true);
     
@@ -89,7 +100,7 @@ async function loadRecommendations() {
         if (data.albums && data.albums.length > 0) {
             localStorage.setItem('last_recommendations', JSON.stringify(data.albums));
             localStorage.setItem('last_updated', new Date().toISOString());
-            await renderRecommendations(data.albums);
+            renderRecommendations(data.albums);
         } else {
             showLoading(false);
             alert('No se encontraron recomendaciones. Por favor, intenta de nuevo.');
@@ -101,8 +112,8 @@ async function loadRecommendations() {
     }
 }
 
-// Render recommendations grid
-async function renderRecommendations(recommendations) {
+// Render recommendations grid (fast, no pricing calls)
+function renderRecommendations(recommendations) {
     document.getElementById('landing-view').style.display = 'none';
     document.getElementById('recommendations-view').classList.add('active');
     
@@ -111,63 +122,20 @@ async function renderRecommendations(recommendations) {
     const container = document.getElementById('albums-container');
     container.innerHTML = '';
     
-    // Create skeleton cards first
-    recommendations.forEach((_, index) => {
-        const skeleton = createSkeletonCard();
-        container.appendChild(skeleton);
-    });
-    
-    // Load pricing in parallel for all albums
-    const pricingPromises = recommendations.map(async (rec, index) => {
-        const albumInfo = rec.album_info || {};
-        const artist = albumInfo.artists?.[0]?.name || 'Unknown Artist';
-        const album = albumInfo.name || 'Unknown Album';
-        
-        try {
-            const pricingData = await fetchPricing(artist, album);
-            return { ...rec, pricing: pricingData, index };
-        } catch (error) {
-            console.error(`Error fetching pricing for ${artist} - ${album}:`, error);
-            return { ...rec, pricing: null, index };
-        }
-    });
-    
-    const results = await Promise.all(pricingPromises);
-    
-    // Replace skeletons with actual cards
-    results.forEach(result => {
-        const card = createAlbumCard(result);
-        const skeleton = container.children[result.index];
-        if (skeleton) {
-            container.replaceChild(card, skeleton);
-        }
+    recommendations.forEach(rec => {
+        const card = createAlbumCard(rec);
+        container.appendChild(card);
     });
     
     showLoading(false);
 }
 
-// Create skeleton card
-function createSkeletonCard() {
-    const card = document.createElement('div');
-    card.className = 'album-card';
-    card.innerHTML = `
-        <div class="album-cover skeleton"></div>
-        <div class="album-info">
-            <div class="album-title skeleton" style="height: 1rem; width: 80%; margin-bottom: 0.5rem;"></div>
-            <div class="album-artist skeleton" style="height: 0.9rem; width: 60%;"></div>
-        </div>
-    `;
-    return card;
-}
-
-// Create album card
+// Create album card (no pricing data yet)
 function createAlbumCard(rec) {
     const albumInfo = rec.album_info || {};
     const artist = albumInfo.artists?.[0]?.name || 'Unknown Artist';
     const album = albumInfo.name || 'Unknown Album';
     const cover = albumInfo.images?.[0]?.url || 'https://via.placeholder.com/300x300?text=No+Cover';
-    const score = rec.combined_score?.toFixed(1) || '0.0';
-    const pricing = rec.pricing;
     
     const card = document.createElement('div');
     card.className = 'album-card';
@@ -177,53 +145,93 @@ function createAlbumCard(rec) {
             <div class="album-title">${album}</div>
             <div class="album-artist">${artist}</div>
         </div>
-        <div class="album-details">
-            <div class="album-details-content">
-                ${pricing ? renderPricingSection(pricing) : '<p class="price-label">Precios no disponibles</p>'}
-            </div>
-        </div>
     `;
     
     card.addEventListener('click', () => {
-        card.classList.toggle('expanded');
+        openAlbumDetail(rec);
     });
     
     return card;
 }
 
-// Render pricing section
-function renderPricingSection(pricing) {
+// Open album detail page
+async function openAlbumDetail(rec) {
+    const albumInfo = rec.album_info || {};
+    const artist = albumInfo.artists?.[0]?.name || 'Unknown Artist';
+    const album = albumInfo.name || 'Unknown Album';
+    const cover = albumInfo.images?.[0]?.url || 'https://via.placeholder.com/300x300?text=No+Cover';
+    
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <button class="modal-close" onclick="this.parentElement.parentElement.remove()">✕</button>
+            <div class="modal-body">
+                <img src="${cover}" alt="${album}" class="modal-cover">
+                <div class="modal-info">
+                    <h2>${album}</h2>
+                    <p class="modal-artist">${artist}</p>
+                    <div class="modal-pricing">
+                        <div class="spinner-small"></div>
+                        <p>Cargando precios...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    try {
+        const pricingData = await fetchPricing(artist, album);
+        const pricingContainer = modal.querySelector('.modal-pricing');
+        pricingContainer.innerHTML = renderDetailPricing(pricingData);
+    } catch (error) {
+        console.error('Error fetching pricing:', error);
+        const pricingContainer = modal.querySelector('.modal-pricing');
+        pricingContainer.innerHTML = '<p class="error-text">No se pudieron cargar los precios</p>';
+    }
+}
+
+// Render pricing in detail view
+function renderDetailPricing(pricing) {
     let html = '';
     
-    // eBay price
     if (pricing.ebay_offer) {
         html += `
-            <div class="price-section">
+            <div class="price-highlight">
                 <div class="price-label">Mejor precio eBay</div>
                 <div class="price-value">${pricing.ebay_offer.total_price} EUR</div>
+                <a href="${pricing.ebay_offer.item_web_url}" target="_blank" class="btn-primary">
+                    🛒 Comprar en eBay
+                </a>
             </div>
         `;
     }
     
-    // Links
-    html += '<div class="links-section">';
-    
     if (pricing.discogs_sell_url) {
-        html += `<a href="${pricing.discogs_sell_url}" target="_blank" class="link-btn">🎵 Ver en Discogs</a>`;
+        html += `
+            <a href="${pricing.discogs_sell_url}" target="_blank" class="btn-secondary">
+                🎵 Ver en Discogs
+            </a>
+        `;
     }
     
-    if (pricing.ebay_offer?.item_web_url) {
-        html += `<a href="${pricing.ebay_offer.item_web_url}" target="_blank" class="link-btn">🛒 Comprar en eBay</a>`;
-    }
-    
-    // Local stores
     if (pricing.local_stores && pricing.local_stores.length > 0) {
+        html += '<div class="stores-section"><h3>Tiendas Locales</h3>';
         pricing.local_stores.forEach(store => {
-            html += `<a href="${store.url}" target="_blank" class="link-btn">🏪 ${store.name}</a>`;
+            html += `
+                <a href="${store.url}" target="_blank" class="store-link">
+                    🏪 ${store.name}
+                </a>
+            `;
         });
+        html += '</div>';
     }
     
-    html += '</div>';
+    if (!pricing.ebay_offer && !pricing.discogs_sell_url && (!pricing.local_stores || pricing.local_stores.length === 0)) {
+        html = '<p class="no-pricing">No hay precios disponibles en este momento</p>';
+    }
     
     return html;
 }
