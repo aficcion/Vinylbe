@@ -15,7 +15,8 @@ I want to prioritize a clear, concise, and professional communication style. For
 - **Performance breakthrough**: Reduced from ~112 API calls to ~7 calls per complete flow (94% reduction)
 - **Speed improvement**: Full search + suggestions now completes in <2s vs 20-60s before (90% faster)
 - **Graceful degradation**: Works with or without Discogs credentials (with/without images)
-- **Maintained functionality**: Still shows up to 5 suggested artists with performance metrics in UI
+- **Hybrid suggestion algorithm**: Shows 2 from last added artist + 3 globally most voted, ensuring immediate feedback when adding new artists
+- **Maintained functionality**: Shows up to 5 suggested artists with performance metrics in UI
 
 **Enhanced Discogs Integration:**
 - **Title normalization**: Album titles are now normalized before searching in Discogs by removing suffixes like "(Deluxe Version)", "(Remastered)", "(Anniversary Edition)", etc. This significantly improves match rate for albums with multiple editions.

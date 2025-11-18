@@ -457,14 +457,34 @@ def build_suggestions(
     limit: int = 5,
 ) -> Tuple[List[Artist], float]:
     """
-    Genera sugerencias usando artist.getInfo de Last.fm (trae 5 similares incluidos).
-    Busca imágenes en Discogs solo para los top artistas sugeridos.
+    Genera sugerencias híbridas:
+    - 2 del último artista añadido (garantizados)
+    - 3 de los más votados globalmente
+    
+    Busca imágenes en Discogs solo para los artistas sugeridos.
     Devuelve (lista de artistas sugeridos, tiempo total en segundos).
     """
     start_time = time.time()
     
     if not selected or limit <= 0:
         return [], 0.0
+
+    last_artist_count = min(2, limit)
+    global_count = limit - last_artist_count
+    
+    last_artist = selected[-1]
+    last_artist_similars: List[str] = []
+    
+    last_info = client.get_artist_info(name=last_artist.name, mbid=last_artist.mbid)
+    if last_info:
+        similars = last_info.get("similar", {}).get("artist", [])
+        if isinstance(similars, dict):
+            similars = [similars]
+        
+        for sim in similars[:last_artist_count]:
+            sim_name = sim.get("name")
+            if sim_name and sim_name.lower() != last_artist.name.lower():
+                last_artist_similars.append(sim_name)
 
     candidate_counts: Dict[str, int] = {}
     candidate_names: Dict[str, str] = {}
@@ -497,18 +517,25 @@ def build_suggestions(
         candidate_counts.pop(sel_key, None)
         candidate_names.pop(sel_key, None)
     
+    last_artist_similars_lower = {name.lower() for name in last_artist_similars}
+    for name_lower in last_artist_similars_lower:
+        candidate_counts.pop(name_lower, None)
+        candidate_names.pop(name_lower, None)
+    
     sorted_candidates = sorted(
         candidate_counts.items(),
         key=lambda kv: kv[1],
         reverse=True,
     )
     
-    top_artist_names = [candidate_names[name_lower] for name_lower, _ in sorted_candidates[:limit]]
+    global_artist_names = [candidate_names[name_lower] for name_lower, _ in sorted_candidates[:global_count]]
     
-    images_map = client.get_similar_artist_images_discogs(top_artist_names)
+    final_artist_names = last_artist_similars + global_artist_names
+    
+    images_map = client.get_similar_artist_images_discogs(final_artist_names)
     
     suggestions: List[Artist] = []
-    for name in top_artist_names:
+    for name in final_artist_names:
         image_url = images_map.get(name)
         suggestions.append(Artist(name=name, mbid=None, image_url=image_url))
     
