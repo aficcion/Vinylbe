@@ -258,93 +258,59 @@
             white-space: nowrap;
         }
 
-        /* Modal styles */
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.8);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
+        #album-detail-view {
+            display: none;
+        }
+
+        .detail-container {
+            max-width: 900px;
+            margin: 0 auto;
             padding: 2rem;
-            animation: fadeIn 0.2s;
         }
 
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-
-        .modal-content {
-            background: var(--card-bg);
-            border-radius: 12px;
-            max-width: 600px;
-            width: 100%;
-            max-height: 90vh;
-            overflow-y: auto;
-            position: relative;
-            animation: slideUp 0.3s;
-        }
-
-        @keyframes slideUp {
-            from { transform: translateY(20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
-
-        .modal-close {
-            position: absolute;
-            top: 1rem;
-            right: 1rem;
+        .back-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
             background: var(--bg-secondary);
-            border: none;
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            font-size: 1.2rem;
-            cursor: pointer;
-            color: var(--text-primary);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-            z-index: 10;
-        }
-
-        .modal-close:hover {
-            background: var(--border-color);
-            transform: rotate(90deg);
-        }
-
-        .modal-body {
-            padding: 2rem;
-        }
-
-        .modal-cover {
-            width: 100%;
+            border: 1px solid var(--border-color);
+            padding: 0.75rem 1.5rem;
             border-radius: 8px;
-            margin-bottom: 1.5rem;
-        }
-
-        .modal-info h2 {
-            font-size: 1.8rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-
-        .modal-artist {
-            font-size: 1.2rem;
-            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.95rem;
+            color: var(--text-primary);
+            transition: all 0.2s;
             margin-bottom: 2rem;
         }
 
-        .modal-pricing {
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
+        .back-button:hover {
+            background: var(--border-color);
+        }
+
+        .detail-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 3rem;
+            align-items: start;
+        }
+
+        .detail-cover-section img {
+            width: 100%;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+        }
+
+        .detail-info-section h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 0.75rem;
+            line-height: 1.2;
+        }
+
+        .detail-info-section .detail-artist {
+            font-size: 1.5rem;
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
         }
 
         .spinner-small {
@@ -354,46 +320,50 @@
             width: 30px;
             height: 30px;
             animation: spin 1s linear infinite;
-            margin: 0 auto;
+            margin: 2rem auto;
         }
 
         .price-highlight {
             background: var(--bg-secondary);
             border: 2px solid var(--accent-color);
-            border-radius: 8px;
-            padding: 1.5rem;
+            border-radius: 12px;
+            padding: 2rem;
             text-align: center;
-            margin-bottom: 1rem;
+            margin-bottom: 1.5rem;
         }
 
         .price-label {
             font-size: 0.9rem;
             color: var(--text-secondary);
             margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .price-value {
-            font-size: 2rem;
+            font-size: 2.5rem;
             font-weight: 700;
             color: var(--accent-color);
-            margin-bottom: 1rem;
+            margin-bottom: 1.5rem;
         }
 
         .btn-primary {
             display: block;
             background: var(--accent-color);
             color: white;
-            padding: 0.75rem 1.5rem;
+            padding: 1rem 2rem;
             border-radius: 8px;
             text-decoration: none;
             text-align: center;
             font-weight: 600;
+            font-size: 1.05rem;
             transition: all 0.2s;
         }
 
         .btn-primary:hover {
             background: #1ed760;
             transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(29, 185, 84, 0.4);
         }
 
         .btn-secondary {
@@ -401,12 +371,14 @@
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
             color: var(--text-primary);
-            padding: 0.75rem 1.5rem;
+            padding: 1rem 2rem;
             border-radius: 8px;
             text-decoration: none;
             text-align: center;
             font-weight: 500;
+            font-size: 1.05rem;
             transition: all 0.2s;
+            margin-bottom: 1rem;
         }
 
         .btn-secondary:hover {
@@ -414,13 +386,13 @@
         }
 
         .stores-section {
-            margin-top: 1.5rem;
-            padding-top: 1.5rem;
+            margin-top: 2rem;
+            padding-top: 2rem;
             border-top: 1px solid var(--border-color);
         }
 
         .stores-section h3 {
-            font-size: 1.1rem;
+            font-size: 1.2rem;
             font-weight: 600;
             margin-bottom: 1rem;
         }
@@ -428,27 +400,35 @@
         .store-link {
             display: block;
             background: var(--bg-secondary);
-            padding: 0.75rem 1rem;
-            border-radius: 6px;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
             text-decoration: none;
             color: var(--text-primary);
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.75rem;
             transition: all 0.2s;
+            font-size: 1rem;
         }
 
         .store-link:hover {
             background: var(--border-color);
+            transform: translateX(4px);
         }
 
         .no-pricing, .error-text {
             text-align: center;
             color: var(--text-secondary);
-            padding: 2rem;
+            padding: 3rem 2rem;
+            font-size: 1.1rem;
         }
 
         @media (max-width: 1024px) {
             .albums-grid {
                 grid-template-columns: repeat(3, 1fr);
+            }
+            
+            .detail-content {
+                grid-template-columns: 1fr;
+                gap: 2rem;
             }
         }
 
@@ -465,16 +445,16 @@
                 grid-template-columns: repeat(2, 1fr);
             }
 
-            .modal-overlay {
-                padding: 1rem;
-            }
-
-            .modal-body {
-                padding: 1.5rem;
-            }
-
             .features {
                 grid-template-columns: 1fr;
+            }
+
+            .detail-info-section h1 {
+                font-size: 2rem;
+            }
+
+            .detail-info-section .detail-artist {
+                font-size: 1.2rem;
             }
         }
 
@@ -533,6 +513,28 @@
             <p id="last-updated">Basado en tu escucha</p>
         </div>
         <div class="albums-grid" id="albums-container">
+        </div>
+    </div>
+
+    <div id="album-detail-view">
+        <div class="detail-container">
+            <button class="back-button" onclick="backToRecommendations()">
+                ← Volver a recomendaciones
+            </button>
+            
+            <div class="detail-content">
+                <div class="detail-cover-section">
+                    <img id="detail-cover" src="" alt="Album cover">
+                </div>
+                
+                <div class="detail-info-section">
+                    <h1 id="detail-title"></h1>
+                    <p class="detail-artist" id="detail-artist"></p>
+                    
+                    <div id="detail-pricing">
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 

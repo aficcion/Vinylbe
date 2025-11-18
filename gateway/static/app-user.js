@@ -58,10 +58,16 @@ async function handleSpotifyCallback() {
             const data = await response.json();
             
             if (data.status === 'success') {
+                document.body.innerHTML = `
+                    <div style="text-align: center; padding: 2rem; font-family: sans-serif;">
+                        <h2>✓ Autenticación exitosa</h2>
+                        <p>Esta ventana se cerrará automáticamente...</p>
+                    </div>
+                `;
                 if (window.opener) {
                     window.opener.authPending = true;
                 }
-                window.close();
+                setTimeout(() => window.close(), 1000);
             } else {
                 document.body.innerHTML = `
                     <div style="text-align: center; padding: 2rem; font-family: sans-serif;">
@@ -115,6 +121,7 @@ async function loadRecommendations() {
 // Render recommendations grid (fast, no pricing calls)
 function renderRecommendations(recommendations) {
     document.getElementById('landing-view').style.display = 'none';
+    document.getElementById('album-detail-view').style.display = 'none';
     document.getElementById('recommendations-view').classList.add('active');
     
     updateLastUpdatedText();
@@ -161,36 +168,32 @@ async function openAlbumDetail(rec) {
     const album = albumInfo.name || 'Unknown Album';
     const cover = albumInfo.images?.[0]?.url || 'https://via.placeholder.com/300x300?text=No+Cover';
     
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.innerHTML = `
-        <div class="modal-content">
-            <button class="modal-close" onclick="this.parentElement.parentElement.remove()">✕</button>
-            <div class="modal-body">
-                <img src="${cover}" alt="${album}" class="modal-cover">
-                <div class="modal-info">
-                    <h2>${album}</h2>
-                    <p class="modal-artist">${artist}</p>
-                    <div class="modal-pricing">
-                        <div class="spinner-small"></div>
-                        <p>Cargando precios...</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
+    document.getElementById('recommendations-view').classList.remove('active');
+    document.getElementById('album-detail-view').style.display = 'block';
     
-    document.body.appendChild(modal);
+    document.getElementById('detail-cover').src = cover;
+    document.getElementById('detail-title').textContent = album;
+    document.getElementById('detail-artist').textContent = artist;
+    
+    const pricingContainer = document.getElementById('detail-pricing');
+    pricingContainer.innerHTML = `
+        <div class="spinner-small"></div>
+        <p style="text-align: center; color: var(--text-secondary); margin-top: 1rem;">Cargando precios...</p>
+    `;
     
     try {
         const pricingData = await fetchPricing(artist, album);
-        const pricingContainer = modal.querySelector('.modal-pricing');
         pricingContainer.innerHTML = renderDetailPricing(pricingData);
     } catch (error) {
         console.error('Error fetching pricing:', error);
-        const pricingContainer = modal.querySelector('.modal-pricing');
         pricingContainer.innerHTML = '<p class="error-text">No se pudieron cargar los precios</p>';
     }
+}
+
+// Go back to recommendations
+function backToRecommendations() {
+    document.getElementById('album-detail-view').style.display = 'none';
+    document.getElementById('recommendations-view').classList.add('active');
 }
 
 // Render pricing in detail view
