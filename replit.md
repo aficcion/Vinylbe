@@ -6,6 +6,20 @@ This project is a comprehensive vinyl recommendation system that leverages Spoti
 ## User Preferences
 I want to prioritize a clear, concise, and professional communication style. For development, I prefer an iterative approach, focusing on delivering core functionality first and then enhancing it. I value detailed explanations, especially for complex architectural decisions. Please ask for my approval before making any major changes to the system architecture or core functionalities.
 
+## Recent Changes (November 18, 2025)
+**Enhanced Discogs Integration:**
+- **Title normalization**: Album titles are now normalized before searching in Discogs by removing suffixes like "(Deluxe Version)", "(Remastered)", "(Anniversary Edition)", etc. This significantly improves match rate for albums with multiple editions.
+- **Master/Release fallback system**: The system now attempts to find a Discogs master first; if not found, it falls back to searching for releases. This ensures better coverage for albums that only exist as releases without masters.
+- **Release tracklist support**: Added new endpoint to fetch tracklists from releases (not only masters), providing comprehensive track information for all types of vinyl entries.
+- **Smart URL generation**: URLs to Discogs marketplace are generated correctly based on type (master_id or release_id).
+
+**Improved Detail Page UI:**
+- **Wider layout**: Expanded from 900px to 1400px for better use of screen space on desktop
+- **Optimized 2-column grid**: Left column (400px) shows album cover and basic info; right column displays tracklist, pricing, and store links
+- **Scrollable tracklist**: Tracklist has max-height with overflow for albums with many tracks, preventing page scroll
+- **Informative messages**: Clear messages when data is unavailable (e.g., "No se encontró tracklist en Discogs", "No hay ofertas de eBay disponibles")
+- **Type indicator**: Shows whether the album was found as "Master" or "Release" in Discogs
+
 ## System Architecture
 
 ### UI/UX Decisions
@@ -17,12 +31,14 @@ The main user interface is a clean, minimalista landing page with dark/light the
 - Automatic flow: login → auto-fetch recommendations → display grid (fast 2-3s loading, no pricing)
 - Grid layout: 4 columns (desktop), 3 columns (tablet), 2 columns (mobile), 1 column (small mobile)
 - Album cards with high-quality Spotify cover art, clickable to open full detail page
-- **Album detail page**: Full page (not modal) with album cover, artist info, back button, and comprehensive information:
+- **Album detail page**: Full page (1400px wide) with 2-column layout (cover + info | tracklist + pricing):
   - **Spotify playback link**: Direct "Escuchar en Spotify" button for instant streaming
-  - **Tracklist**: Complete track listing from Discogs master release with durations
+  - **Tracklist**: Complete track listing from Discogs (master or release) with durations, scrollable for long albums
   - **eBay pricing**: Best EU-filtered price with direct purchase link
-  - **Discogs marketplace**: Direct link to vinyl marketplace
+  - **Discogs marketplace**: Direct link to vinyl marketplace (master_id or release_id based)
+  - **Discogs details**: Link to full album information page
   - **Local stores**: Links to Madrid vinyl shops (Marilians, Bajo el Volcán, Bora Bora, Revolver)
+  - **Status messages**: Clear informative messages when data is unavailable
 - On-demand pricing: Prices and tracklist load automatically when user opens album detail (0.5-2s)
 - Skeleton loading states for progressive rendering
 - Persistent theme preference with localStorage
@@ -36,11 +52,17 @@ The system is built on a microservices architecture using FastAPI and Python 3.1
 
 ### Feature Specifications
 - **Spotify Integration**: Standard redirect-based OAuth flow (no popups), retrieves user's top tracks and artists across different time periods, refreshes tokens automatically, and provides album streaming links.
-- **Discogs Integration**: Searches for vinyl releases, retrieves master tracklists with track positions and durations, provides marketplace statistics (prices, availability), converts prices to EUR, and generates sales links using master_id structure (`https://www.discogs.com/sell/list?master_id={id}&currency=EUR&format=Vinyl`), respecting rate limits.
+- **Discogs Integration**: 
+  - Normalizes album titles by removing edition suffixes (Deluxe, Remastered, etc.) before searching
+  - Implements master → release fallback: searches for master first, then release if master not found
+  - Retrieves tracklists from both masters and releases with track positions and durations
+  - Provides marketplace statistics (prices, availability), converts prices to EUR
+  - Generates sales links using appropriate ID type: `https://www.discogs.com/sell/list?master_id={id}` or `release_id={id}`
+  - Respects API rate limits with intelligent throttling
 - **Recommendation Engine**: Scores tracks and artists based on listening frequency and time periods, aggregates albums, filters by track count, and boosts scores for favorite artists.
 - **Pricing Service**: Finds best prices on eBay filtered by EU location (27 countries) with dual-layer filtering (API + client-side validation), currency in EUR, and shipping to Spain. Automatically handles eBay API OAuth and provides links to local vinyl stores (Marilians, Bajo el Volcán, Bora Bora, Revolver).
 - **API Gateway**: Acts as a single entry point, orchestrates the recommendation and pricing workflows, proxies Spotify authentication, and performs health checks on all microservices.
-- **Optimized Detail Page Flow**: When user clicks an album, the detail page loads instantly and then fetches in parallel: Discogs master link, eBay pricing, local stores (0.5-1s for first three), followed by tracklist fetch using the master_id (additional 0.5-1s). Total load time for complete album information: 1-2 seconds. Returns Spotify streaming link, complete tracklist, eBay offer, Discogs marketplace link, and local store links.
+- **Optimized Detail Page Flow**: When user clicks an album, the detail page loads instantly and then fetches in parallel: Discogs link (master or release), eBay pricing, local stores (0.5-1s for first three), followed by tracklist fetch using the appropriate ID type (additional 0.5-1s). Total load time for complete album information: 1-2 seconds. Returns Spotify streaming link, complete tracklist, eBay offer, Discogs marketplace link, Discogs detail link, local store links, and informative status messages.
 
 ### System Design Choices
 The architecture comprises five independent microservices: `Spotify Service` (port 3000), `Discogs Service` (port 3001), `Recommender Service` (port 3002), `Pricing Service` (port 3003), and `API Gateway` (port 5000). This microservices approach ensures scalability, maintainability, and clear separation of concerns. The system is designed for a future evolution to a modular monolith with PostgreSQL for persistence and intelligent caching, supporting pre-loaded catalogs and advanced ingestion jobs.
