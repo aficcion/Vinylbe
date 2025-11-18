@@ -58,16 +58,10 @@ async function handleSpotifyCallback() {
             const data = await response.json();
             
             if (data.status === 'success') {
-                document.body.innerHTML = `
-                    <div style="text-align: center; padding: 2rem; font-family: sans-serif;">
-                        <h2>✓ Autenticación exitosa</h2>
-                        <p>Esta ventana se cerrará automáticamente...</p>
-                    </div>
-                `;
                 if (window.opener) {
                     window.opener.authPending = true;
                 }
-                setTimeout(() => window.close(), 1000);
+                window.close();
             } else {
                 document.body.innerHTML = `
                     <div style="text-align: center; padding: 2rem; font-family: sans-serif;">
