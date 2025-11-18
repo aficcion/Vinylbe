@@ -30,29 +30,16 @@ async function loginSpotify() {
 // Handle Spotify callback
 async function handleSpotifyCallback() {
     const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
+    const auth = urlParams.get('auth');
     
-    if (code) {
+    if (auth === 'success') {
         window.history.replaceState({}, document.title, '/');
-        
+        localStorage.removeItem('vinilogy_auth_pending');
         showLoading(true);
-        
-        try {
-            const response = await fetch(`/auth/callback?code=${code}`);
-            const data = await response.json();
-            
-            if (data.status === 'ok') {
-                localStorage.removeItem('vinilogy_auth_pending');
-                await loadRecommendations();
-            } else {
-                showLoading(false);
-                alert('Error al autenticar con Spotify. Por favor, intenta de nuevo.');
-            }
-        } catch (error) {
-            console.error('Error in callback:', error);
-            showLoading(false);
-            alert('Error al completar la autenticación.');
-        }
+        await loadRecommendations();
+    } else if (auth === 'error') {
+        window.history.replaceState({}, document.title, '/');
+        alert('Error al autenticar con Spotify. Por favor, intenta de nuevo.');
     }
 }
 
