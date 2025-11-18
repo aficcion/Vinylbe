@@ -14,12 +14,12 @@ function toggleTheme() {
 // Spotify Authentication
 async function loginSpotify() {
     try {
-        const response = await fetch('/spotify-auth-url');
+        const response = await fetch('/auth/login');
         const data = await response.json();
         
-        if (data.auth_url) {
+        if (data.authorize_url) {
             localStorage.setItem('vinilogy_flow', 'pending');
-            window.location.href = data.auth_url;
+            window.location.href = data.authorize_url;
         }
     } catch (error) {
         console.error('Error initiating Spotify login:', error);
@@ -30,26 +30,17 @@ async function loginSpotify() {
 // Handle Spotify callback
 async function handleSpotifyCallback() {
     const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
+    const auth = urlParams.get('auth');
     
-    if (code && localStorage.getItem('vinilogy_flow') === 'pending') {
-        showLoading(true);
+    if (auth === 'success') {
         localStorage.removeItem('vinilogy_flow');
-        
-        try {
-            const response = await fetch(`/spotify-callback?code=${code}`);
-            const data = await response.json();
-            
-            if (data.access_token) {
-                localStorage.setItem('spotify_token', data.access_token);
-                window.history.replaceState({}, document.title, '/');
-                await loadRecommendations();
-            }
-        } catch (error) {
-            console.error('Error handling Spotify callback:', error);
-            showLoading(false);
-            alert('Error al completar la autenticación. Por favor, intenta de nuevo.');
-        }
+        window.history.replaceState({}, document.title, '/');
+        showLoading(true);
+        await loadRecommendations();
+    } else if (auth === 'error') {
+        localStorage.removeItem('vinilogy_flow');
+        window.history.replaceState({}, document.title, '/');
+        alert('Error al completar la autenticación. Por favor, intenta de nuevo.');
     }
 }
 
@@ -66,10 +57,10 @@ async function loadRecommendations() {
         const response = await fetch('/recommend-vinyl');
         const data = await response.json();
         
-        if (data.recommendations && data.recommendations.length > 0) {
-            localStorage.setItem('last_recommendations', JSON.stringify(data.recommendations));
+        if (data.albums && data.albums.length > 0) {
+            localStorage.setItem('last_recommendations', JSON.stringify(data.albums));
             localStorage.setItem('last_updated', new Date().toISOString());
-            await renderRecommendations(data.recommendations);
+            await renderRecommendations(data.albums);
         } else {
             showLoading(false);
             alert('No se encontraron recomendaciones. Por favor, intenta de nuevo.');
@@ -243,9 +234,8 @@ function updateLastUpdatedText() {
 // Check if user has cached recommendations
 function checkCachedRecommendations() {
     const cached = localStorage.getItem('last_recommendations');
-    const token = localStorage.getItem('spotify_token');
     
-    if (cached && token) {
+    if (cached) {
         const recommendations = JSON.parse(cached);
         renderRecommendations(recommendations);
     }
