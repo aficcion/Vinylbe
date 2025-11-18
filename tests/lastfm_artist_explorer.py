@@ -50,6 +50,11 @@ _RE_DISCOGS_MASTER = re.compile(
     r"https?://(?:www\.)?discogs\.com/(?:[a-z]{2}/)?master/(\d+)", re.I
 )
 
+# Hashes conocidos de placeholders genéricos de Last.fm
+LASTFM_PLACEHOLDER_HASHES = {
+    "2a96cbd8b46e442fc41c2b86b821562f",
+}
+
 # =========================
 # Cliente HTTP reutilizable (MB + Discogs)
 # =========================
@@ -92,6 +97,27 @@ class LastFMClient:
             params.update(extra)
         return params
 
+    def get_artist_info(self, *, name: Optional[str] = None, mbid: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Obtiene información detallada del artista usando artist.getInfo (mejores imágenes)."""
+        extra: Dict[str, str] = {}
+        if mbid:
+            extra["mbid"] = mbid
+        elif name:
+            extra["artist"] = name
+        else:
+            return None
+
+        params = self._build_params("artist.getInfo", extra)
+
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.get(self.base_url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("artist")
+        except httpx.HTTPError:
+            return None
+
     def search_artists(self, query: str, limit: int = 10) -> List[Artist]:
         """Last.fm artist.search"""
         if not query.strip():
@@ -126,6 +152,12 @@ class LastFMClient:
                 continue
             mbid = item.get("mbid") or None
             image_url = self._extract_best_image(item.get("image"))
+            
+            if not image_url:
+                artist_info = self.get_artist_info(name=name, mbid=mbid)
+                if artist_info:
+                    image_url = self._extract_best_image(artist_info.get("image"))
+            
             artists.append(Artist(name=name, mbid=mbid, image_url=image_url))
         return artists
 
@@ -168,13 +200,31 @@ class LastFMClient:
                 continue
             mbid_val = item.get("mbid") or None
             image_url = self._extract_best_image(item.get("image"))
+            
+            if not image_url:
+                artist_info = self.get_artist_info(name=name, mbid=mbid_val)
+                if artist_info:
+                    image_url = self._extract_best_image(artist_info.get("image"))
+            
             artists.append(Artist(name=name, mbid=mbid_val, image_url=image_url))
         return artists
 
     @staticmethod
+    def _is_placeholder_image(url: str) -> bool:
+        """Verifica si la URL es un placeholder genérico de Last.fm."""
+        if not url:
+            return True
+        
+        for placeholder_hash in LASTFM_PLACEHOLDER_HASHES:
+            if placeholder_hash in url:
+                return True
+        return False
+
+    @staticmethod
     def _extract_best_image(images: Any) -> Optional[str]:
         """
-        Extrae una URL de imagen de la estructura devuelta por Last.fm.
+        Extrae la mejor URL de imagen de Last.fm, filtrando placeholders genéricos.
+        Prioriza: extralarge > large > medium > small
         """
         if not images:
             return None
@@ -186,19 +236,27 @@ class LastFMClient:
         else:
             return None
 
-        urls: List[str] = []
+        size_priority = {"extralarge": 4, "large": 3, "medium": 2, "small": 1}
+        best_url = None
+        best_priority = 0
+
         for img in images_list:
             if not isinstance(img, dict):
                 continue
             url = img.get("#text") or img.get("text") or ""
             url = url.strip()
-            if url:
-                urls.append(url)
+            
+            if not url or LastFMClient._is_placeholder_image(url):
+                continue
+            
+            size = img.get("size", "")
+            priority = size_priority.get(size, 0)
+            
+            if priority > best_priority:
+                best_url = url
+                best_priority = priority
 
-        if not urls:
-            return None
-
-        return urls[-1]  # normalmente la más grande
+        return best_url
 
 
 # =========================
