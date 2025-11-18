@@ -24,6 +24,7 @@ class SpotifyAuthManager:
             "response_type": "code",
             "redirect_uri": self.redirect_uri,
             "scope": " ".join(scopes),
+            "show_dialog": "true"
         }
         return f"{self.auth_url}?{urlencode(params)}"
     
