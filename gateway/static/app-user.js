@@ -18,28 +18,8 @@ async function loginSpotify() {
         const data = await response.json();
         
         if (data.authorize_url) {
-            const width = 600;
-            const height = 700;
-            const left = (screen.width / 2) - (width / 2);
-            const top = (screen.height / 2) - (height / 2);
-            
-            window.authPending = true;
-            const authWindow = window.open(
-                data.authorize_url,
-                'spotify-auth',
-                `width=${width},height=${height},left=${left},top=${top}`
-            );
-            
-            const pollInterval = setInterval(() => {
-                if (authWindow.closed) {
-                    clearInterval(pollInterval);
-                    if (window.authPending) {
-                        window.authPending = false;
-                        showLoading(true);
-                        setTimeout(() => loadRecommendations(), 500);
-                    }
-                }
-            }, 500);
+            localStorage.setItem('vinilogy_auth_pending', 'true');
+            window.location.href = data.authorize_url;
         }
     } catch (error) {
         console.error('Error initiating Spotify login:', error);
@@ -47,39 +27,31 @@ async function loginSpotify() {
     }
 }
 
-// Handle Spotify callback in popup
+// Handle Spotify callback
 async function handleSpotifyCallback() {
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
     
-    if (code && window.opener) {
+    if (code) {
+        window.history.replaceState({}, document.title, '/');
+        
+        showLoading(true);
+        
         try {
             const response = await fetch(`/auth/callback?code=${code}`);
             const data = await response.json();
             
             if (data.status === 'ok') {
-                if (window.opener) {
-                    window.opener.authPending = true;
-                }
-                window.close();
+                localStorage.removeItem('vinilogy_auth_pending');
+                await loadRecommendations();
             } else {
-                document.body.innerHTML = `
-                    <div style="text-align: center; padding: 2rem; font-family: sans-serif;">
-                        <h2>Error al autenticar</h2>
-                        <p>Por favor, cierra esta ventana e intenta de nuevo.</p>
-                        <button onclick="window.close()" style="margin-top: 1rem; padding: 0.5rem 1rem; cursor: pointer;">Cerrar</button>
-                    </div>
-                `;
+                showLoading(false);
+                alert('Error al autenticar con Spotify. Por favor, intenta de nuevo.');
             }
         } catch (error) {
             console.error('Error in callback:', error);
-            document.body.innerHTML = `
-                <div style="text-align: center; padding: 2rem; font-family: sans-serif;">
-                    <h2>Error</h2>
-                    <p>Hubo un problema al completar la autenticación.</p>
-                    <button onclick="window.close()" style="margin-top: 1rem; padding: 0.5rem 1rem; cursor: pointer;">Cerrar</button>
-                </div>
-            `;
+            showLoading(false);
+            alert('Error al completar la autenticación.');
         }
     }
 }
