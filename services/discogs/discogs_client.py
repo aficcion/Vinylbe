@@ -283,3 +283,54 @@ class DiscogsClient:
                     "error": str(e)
                 }
             }
+    
+    async def get_master_tracklist(self, master_id: int) -> Optional[Dict]:
+        """
+        Obtiene el tracklist de un master ID desde Discogs.
+        """
+        if not self.client:
+            raise ValueError("Client not started")
+        
+        await self._rate_limit()
+        
+        params = self._get_auth_params()
+        url = f"{self.api_base}/masters/{master_id}"
+        debug_url = self._build_debug_url(url, params)
+        
+        try:
+            resp = await self.client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            
+            tracklist = data.get("tracklist", [])
+            
+            # Formatear el tracklist para devolver solo info relevante
+            formatted_tracklist = []
+            for track in tracklist:
+                formatted_tracklist.append({
+                    "position": track.get("position", ""),
+                    "title": track.get("title", ""),
+                    "duration": track.get("duration", "")
+                })
+            
+            return {
+                "master_id": master_id,
+                "tracklist": formatted_tracklist,
+                "title": data.get("title", ""),
+                "year": data.get("year"),
+                "debug_info": {
+                    "request_url": debug_url,
+                    "params_sent": {k: v for k, v in params.items() if k not in ["key", "secret"]}
+                }
+            }
+        except Exception as e:
+            log_event("discogs-client", "ERROR", f"Tracklist fetch failed for master {master_id}: {str(e)}")
+            return {
+                "master_id": master_id,
+                "tracklist": [],
+                "message": f"Error: {str(e)}",
+                "debug_info": {
+                    "request_url": debug_url,
+                    "error": str(e)
+                }
+            }

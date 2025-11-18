@@ -385,6 +385,52 @@
             background: var(--border-color);
         }
 
+        .tracklist-section {
+            margin-top: 2rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .tracklist-section h3 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .tracklist {
+            list-style: none;
+            counter-reset: track-counter;
+            padding: 0;
+        }
+
+        .tracklist li {
+            counter-increment: track-counter;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .tracklist li:last-child {
+            border-bottom: none;
+        }
+
+        .tracklist li::before {
+            content: counter(track-counter) ". ";
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-right: 0.75rem;
+            min-width: 2rem;
+        }
+
+        .tracklist .duration {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-left: auto;
+            padding-left: 1rem;
+        }
+
         .stores-section {
             margin-top: 2rem;
             padding-top: 2rem;

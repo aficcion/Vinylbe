@@ -120,6 +120,7 @@ async function openAlbumDetail(rec) {
     const artist = albumInfo.artists?.[0]?.name || 'Unknown Artist';
     const album = albumInfo.name || 'Unknown Album';
     const cover = albumInfo.images?.[0]?.url || 'https://via.placeholder.com/300x300?text=No+Cover';
+    const spotifyUrl = albumInfo.external_urls?.spotify || null;
     
     document.getElementById('recommendations-view').classList.remove('active');
     document.getElementById('album-detail-view').style.display = 'block';
@@ -131,15 +132,15 @@ async function openAlbumDetail(rec) {
     const pricingContainer = document.getElementById('detail-pricing');
     pricingContainer.innerHTML = `
         <div class="spinner-small"></div>
-        <p style="text-align: center; color: var(--text-secondary); margin-top: 1rem;">Cargando precios...</p>
+        <p style="text-align: center; color: var(--text-secondary); margin-top: 1rem;">Cargando información...</p>
     `;
     
     try {
         const pricingData = await fetchPricing(artist, album);
-        pricingContainer.innerHTML = renderDetailPricing(pricingData);
+        pricingContainer.innerHTML = renderDetailPricing(pricingData, spotifyUrl);
     } catch (error) {
         console.error('Error fetching pricing:', error);
-        pricingContainer.innerHTML = '<p class="error-text">No se pudieron cargar los precios</p>';
+        pricingContainer.innerHTML = '<p class="error-text">No se pudo cargar la información</p>';
     }
 }
 
@@ -150,9 +151,29 @@ function backToRecommendations() {
 }
 
 // Render pricing in detail view
-function renderDetailPricing(pricing) {
+function renderDetailPricing(pricing, spotifyUrl) {
     let html = '';
     
+    // Spotify link
+    if (spotifyUrl) {
+        html += `
+            <a href="${spotifyUrl}" target="_blank" class="btn-primary" style="background: #1DB954; margin-bottom: 1rem;">
+                ▶️ Escuchar en Spotify
+            </a>
+        `;
+    }
+    
+    // Tracklist section
+    if (pricing.tracklist && pricing.tracklist.length > 0) {
+        html += '<div class="tracklist-section"><h3>Lista de Canciones</h3><ol class="tracklist">';
+        pricing.tracklist.forEach(track => {
+            const duration = track.duration ? ` <span class="duration">(${track.duration})</span>` : '';
+            html += `<li>${track.title}${duration}</li>`;
+        });
+        html += '</ol></div>';
+    }
+    
+    // eBay price section
     if (pricing.ebay_offer) {
         const url = pricing.ebay_offer.url || '#';
         const totalPrice = pricing.ebay_offer.total_price || 'N/A';
@@ -168,6 +189,7 @@ function renderDetailPricing(pricing) {
         `;
     }
     
+    // Discogs link
     if (pricing.discogs_sell_url) {
         html += `
             <a href="${pricing.discogs_sell_url}" target="_blank" class="btn-secondary">
@@ -176,6 +198,7 @@ function renderDetailPricing(pricing) {
         `;
     }
     
+    // Local stores section
     if (pricing.local_stores && typeof pricing.local_stores === 'object') {
         const storeNames = {
             'marilians': 'Marilians',
@@ -199,8 +222,8 @@ function renderDetailPricing(pricing) {
         }
     }
     
-    if (!pricing.ebay_offer && !pricing.discogs_sell_url && (!pricing.local_stores || Object.keys(pricing.local_stores).length === 0)) {
-        html = '<p class="no-pricing">No hay precios disponibles en este momento</p>';
+    if (!spotifyUrl && !pricing.tracklist?.length && !pricing.ebay_offer && !pricing.discogs_sell_url && (!pricing.local_stores || Object.keys(pricing.local_stores).length === 0)) {
+        html = '<p class="no-pricing">No hay información disponible en este momento</p>';
     }
     
     return html;

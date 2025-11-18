@@ -108,3 +108,20 @@ async def get_master_link(artist: str, album: str):
         log_event("discogs-service", "INFO", f"No master found for {artist} - {album}")
     
     return result
+
+
+@app.get("/master-tracklist/{master_id}")
+async def get_master_tracklist(master_id: int):
+    if not discogs_client:
+        raise HTTPException(status_code=500, detail="Discogs client not initialized")
+    
+    log_event("discogs-service", "INFO", f"Fetching tracklist for master: {master_id}")
+    
+    result = await discogs_client.get_master_tracklist(master_id)
+    
+    if result.get("tracklist"):
+        log_event("discogs-service", "INFO", f"Tracklist found for master {master_id}: {len(result['tracklist'])} tracks")
+    else:
+        log_event("discogs-service", "INFO", f"No tracklist found for master {master_id}")
+    
+    return result

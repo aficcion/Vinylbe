@@ -172,11 +172,22 @@ async def get_album_pricing(artist: str, album: str):
         else:
             stores_data = stores_resp.json()
         
+        # If we have a master_id, fetch the tracklist
+        master_id = discogs_data.get("master_id")
+        tracklist_data = {"tracklist": []}
+        
+        if master_id:
+            try:
+                tracklist_resp = await http_client.get(f"{DISCOGS_SERVICE_URL}/master-tracklist/{master_id}")
+                tracklist_data = tracklist_resp.json()
+                log_event("gateway", "INFO", f"Tracklist fetched for master {master_id}: {len(tracklist_data.get('tracklist', []))} tracks")
+            except Exception as e:
+                log_event("gateway", "WARNING", f"Tracklist fetch failed: {str(e)}")
+        
         elapsed = time.time() - start_time
         log_event("gateway", "INFO", f"Pricing fetched for {artist} - {album} in {elapsed:.2f}s")
         
         # Generate sell list URL with master_id
-        master_id = discogs_data.get("master_id")
         discogs_sell_url = None
         if master_id:
             discogs_sell_url = f"https://www.discogs.com/sell/list?master_id={master_id}&currency=EUR&format=Vinyl"
@@ -188,12 +199,13 @@ async def get_album_pricing(artist: str, album: str):
             "discogs_master_id": master_id,
             "discogs_sell_url": discogs_sell_url,
             "discogs_title": discogs_data.get("title"),
+            "tracklist": tracklist_data.get("tracklist", []),
             "ebay_offer": ebay_data.get("offer"),
             "local_stores": stores_data.get("stores", {}),
             "request_time_seconds": round(elapsed, 2),
             "debug_info": {
                 "discogs": discogs_data.get("debug_info"),
-                "parallelization": "3 concurrent requests (Discogs + eBay + Local Stores)"
+                "parallelization": "3 concurrent requests (Discogs + eBay + Local Stores) + tracklist fetch"
             }
         }
     

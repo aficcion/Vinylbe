@@ -13,13 +13,20 @@ I want to prioritize a clear, concise, and professional communication style. For
 **User Interface (/):**
 The main user interface is a clean, minimalista landing page with dark/light theme support. Features include:
 - Hero section with clear value proposition and prominent "Conectar con Spotify" button
-- Automatic flow: login → auto-fetch recommendations → display grid with all pricing pre-loaded
+- **OAuth flow**: Standard redirect-based flow (Spotify → callback → auto-redirect to homepage with recommendations)
+- Automatic flow: login → auto-fetch recommendations → display grid (fast 2-3s loading, no pricing)
 - Grid layout: 4 columns (desktop), 3 columns (tablet), 2 columns (mobile), 1 column (small mobile)
-- Album cards with high-quality Spotify cover art, expandable on click to show pricing and purchase links
+- Album cards with high-quality Spotify cover art, clickable to open full detail page
+- **Album detail page**: Full page (not modal) with album cover, artist info, back button, and comprehensive information:
+  - **Spotify playback link**: Direct "Escuchar en Spotify" button for instant streaming
+  - **Tracklist**: Complete track listing from Discogs master release with durations
+  - **eBay pricing**: Best EU-filtered price with direct purchase link
+  - **Discogs marketplace**: Direct link to vinyl marketplace
+  - **Local stores**: Links to Madrid vinyl shops (Marilians, Bajo el Volcán, Bora Bora, Revolver)
+- On-demand pricing: Prices and tracklist load automatically when user opens album detail (0.5-2s)
 - Skeleton loading states for progressive rendering
 - Persistent theme preference with localStorage
 - Timestamp showing "Actualizado hace X horas"
-- Direct links to Discogs marketplace, eBay offers, and local vinyl stores
 
 **Admin Interface (/admin):**
 Technical dashboard for monitoring and debugging, featuring service status monitors, real-time request logs for Discogs API calls, progress tracker for Spotify processing, and detailed debugging information. The admin UI prioritizes transparency, showing detailed request information and allowing manual control of all workflows.
@@ -28,12 +35,12 @@ Technical dashboard for monitoring and debugging, featuring service status monit
 The system is built on a microservices architecture using FastAPI and Python 3.11. Asynchronous communication between services is handled with `httpx`, and `asyncio.gather` is used for parallelizing API calls to minimize latency. Shared models are defined in `libs/shared/` to ensure data consistency across services. Structured logging with timestamps is implemented for detailed tracking and debugging.
 
 ### Feature Specifications
-- **Spotify Integration**: Manages OAuth, retrieves user's top tracks and artists across different time periods, and refreshes tokens automatically.
-- **Discogs Integration**: Searches for vinyl releases, provides marketplace statistics (prices, availability), converts prices to EUR, and generates sales links using master_id structure (`https://www.discogs.com/sell/list?master_id={id}&currency=EUR&format=Vinyl`), respecting rate limits.
+- **Spotify Integration**: Standard redirect-based OAuth flow (no popups), retrieves user's top tracks and artists across different time periods, refreshes tokens automatically, and provides album streaming links.
+- **Discogs Integration**: Searches for vinyl releases, retrieves master tracklists with track positions and durations, provides marketplace statistics (prices, availability), converts prices to EUR, and generates sales links using master_id structure (`https://www.discogs.com/sell/list?master_id={id}&currency=EUR&format=Vinyl`), respecting rate limits.
 - **Recommendation Engine**: Scores tracks and artists based on listening frequency and time periods, aggregates albums, filters by track count, and boosts scores for favorite artists.
 - **Pricing Service**: Finds best prices on eBay filtered by EU location (27 countries) with dual-layer filtering (API + client-side validation), currency in EUR, and shipping to Spain. Automatically handles eBay API OAuth and provides links to local vinyl stores (Marilians, Bajo el Volcán, Bora Bora, Revolver).
 - **API Gateway**: Acts as a single entry point, orchestrates the recommendation and pricing workflows, proxies Spotify authentication, and performs health checks on all microservices.
-- **Optimized Pricing Flow**: Allows users to manually trigger pricing requests for recommended albums, executing Discogs master link retrieval, eBay, and local store lookups in parallel to achieve 0.5-0.7 second latency. Returns direct marketplace link for purchasing vinyl on Discogs.
+- **Optimized Detail Page Flow**: When user clicks an album, the detail page loads instantly and then fetches in parallel: Discogs master link, eBay pricing, local stores (0.5-1s for first three), followed by tracklist fetch using the master_id (additional 0.5-1s). Total load time for complete album information: 1-2 seconds. Returns Spotify streaming link, complete tracklist, eBay offer, Discogs marketplace link, and local store links.
 
 ### System Design Choices
 The architecture comprises five independent microservices: `Spotify Service` (port 3000), `Discogs Service` (port 3001), `Recommender Service` (port 3002), `Pricing Service` (port 3003), and `API Gateway` (port 5000). This microservices approach ensures scalability, maintainability, and clear separation of concerns. The system is designed for a future evolution to a modular monolith with PostgreSQL for persistence and intelligent caching, supporting pre-loaded catalogs and advanced ingestion jobs.
