@@ -7,6 +7,14 @@ This project is a comprehensive vinyl recommendation system that leverages Spoti
 I want to prioritize a clear, concise, and professional communication style. For development, I prefer an iterative approach, focusing on delivering core functionality first and then enhancing it. I value detailed explanations, especially for complex architectural decisions. Please ask for my approval before making any major changes to the system architecture or core functionalities.
 
 ## Recent Changes (November 18, 2025)
+**Last.fm Artist Explorer with Discogs Image Integration:**
+- **Multi-source image resolution**: Three-tier fallback system for artist images: Last.fm → Discogs → emoji 🎵
+- **Discogs image fallback**: When Last.fm returns placeholder images (hash 2a96cbd8b46e442fc41c2b86b821562f), system automatically searches Discogs for real artist images (600x600 high quality)
+- **Placeholder filtering**: Blacklist system filters known generic Last.fm placeholder images to ensure only real photos are displayed
+- **Performance metrics**: Added timing tracking for all operations (search, similar artists, suggestions) with millisecond precision displayed in UI
+- **Optimized limits**: Reduced suggested artists from 10 to 5 across all interfaces for better UX and faster load times
+- **Smart caching**: Discogs image lookup adds ~200-500ms latency only on first request per artist
+
 **Enhanced Discogs Integration:**
 - **Title normalization**: Album titles are now normalized before searching in Discogs by removing suffixes like "(Deluxe Version)", "(Remastered)", "(Anniversary Edition)", etc. This significantly improves match rate for albums with multiple editions.
 - **Master/Release fallback system**: The system now attempts to find a Discogs master first; if not found, it falls back to searching for releases. This ensures better coverage for albums that only exist as releases without masters.
@@ -70,8 +78,11 @@ The architecture comprises five independent microservices: `Spotify Service` (po
 ## External Dependencies
 
 - **Spotify API**: Used for user authentication, fetching top tracks, and top artists.
-- **Discogs API**: Utilized for searching vinyl releases, retrieving marketplace statistics (prices, availability), and generating sales links.
+- **Discogs API**: Utilized for searching vinyl releases, retrieving marketplace statistics (prices, availability), generating sales links, and providing high-quality artist images as fallback.
+- **Last.fm API**: Used in artist explorer for searching artists, getting similar artists, and artist information. Integrated with Discogs fallback for reliable artist images.
+- **MusicBrainz API**: Used for fetching artist discographies and studio albums with release dates and metadata.
 - **eBay Browse API**: Integrated for finding the best prices for vinyl records, including filtering by currency and shipping location.
 - **Local Store Integrations**: Direct links to specific local vinyl stores (Marilians, Bajo el Volcán, Bora Bora, Revolver) are provided, implying direct website integration rather than API.
 - **FastAPI**: Python web framework used for building the microservices.
 - **httpx**: Asynchronous HTTP client for inter-service communication.
+- **Streamlit**: Python framework used for the Last.fm artist explorer UI (tests/lastfm_artist_explorer.py).
