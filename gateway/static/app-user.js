@@ -50,8 +50,63 @@ async function handleSpotifyCallback() {
 }
 
 // Show/hide loading state
-function showLoading(show) {
-    document.getElementById('loading').classList.toggle('active', show);
+function showLoading(show, message = 'Cargando tus recomendaciones...') {
+    const loadingEl = document.getElementById('loading');
+    loadingEl.classList.toggle('active', show);
+    if (show) {
+        loadingEl.querySelector('p').textContent = message;
+    }
+}
+
+// Progress monitoring
+let progressInterval = null;
+
+let progressPollCount = 0;
+const MAX_PROGRESS_POLLS = 120;
+
+async function startProgressMonitoring() {
+    if (progressInterval) {
+        clearInterval(progressInterval);
+    }
+    
+    progressPollCount = 0;
+    
+    progressInterval = setInterval(async () => {
+        try {
+            progressPollCount++;
+            
+            if (progressPollCount > MAX_PROGRESS_POLLS) {
+                console.warn('Progress monitoring timed out');
+                stopProgressMonitoring();
+                return;
+            }
+            
+            const response = await fetch('/api/recommendations/progress');
+            if (!response.ok) {
+                console.error('Progress fetch failed:', response.status);
+                return;
+            }
+            
+            const progress = await response.json();
+            
+            if (progress.status === 'processing' && progress.total > 0) {
+                const message = `Procesando artista ${progress.current} de ${progress.total}...`;
+                showLoading(true, message);
+            } else if (progress.status === 'completed' || progress.status === 'idle' || progress.status === 'error') {
+                stopProgressMonitoring();
+            }
+        } catch (error) {
+            console.error('Error fetching progress:', error);
+        }
+    }, 500);
+}
+
+function stopProgressMonitoring() {
+    if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+        progressPollCount = 0;
+    }
 }
 
 // Load recommendations (without pricing)
@@ -80,7 +135,8 @@ async function loadRecommendations() {
 
 // Load mixed recommendations (artists + Spotify)
 async function loadMixedRecommendations(artistNames) {
-    showLoading(true);
+    showLoading(true, 'Preparando recomendaciones...');
+    startProgressMonitoring();
     
     try {
         const response = await fetch('/api/recommendations/artists', {
@@ -96,6 +152,8 @@ async function loadMixedRecommendations(artistNames) {
         
         const data = await response.json();
         
+        stopProgressMonitoring();
+        
         if (data.recommendations && data.recommendations.length > 0) {
             const formattedRecs = formatArtistRecommendations(data.recommendations);
             localStorage.setItem('last_recommendations', JSON.stringify(formattedRecs));
@@ -108,6 +166,7 @@ async function loadMixedRecommendations(artistNames) {
         }
     } catch (error) {
         console.error('Error loading mixed recommendations:', error);
+        stopProgressMonitoring();
         showLoading(false);
         alert('Error al cargar recomendaciones. Por favor, intenta de nuevo.');
     }
@@ -385,7 +444,8 @@ function closeArtistSearch() {
 
 async function handleArtistSelection(selectedArtists) {
     closeArtistSearch();
-    showLoading(true);
+    showLoading(true, 'Preparando recomendaciones...');
+    startProgressMonitoring();
     
     const artistNames = selectedArtists.map(a => a.name);
     localStorage.setItem('selected_artist_names', JSON.stringify(artistNames));
@@ -406,6 +466,8 @@ async function handleArtistSelection(selectedArtists) {
         
         const data = await response.json();
         
+        stopProgressMonitoring();
+        
         if (data.recommendations && data.recommendations.length > 0) {
             const formattedRecs = formatArtistRecommendations(data.recommendations);
             localStorage.setItem('last_recommendations', JSON.stringify(formattedRecs));
@@ -417,6 +479,7 @@ async function handleArtistSelection(selectedArtists) {
         }
     } catch (error) {
         console.error('Error loading artist recommendations:', error);
+        stopProgressMonitoring();
         showLoading(false);
         alert('Error al cargar recomendaciones. Por favor, intenta de nuevo.');
     }

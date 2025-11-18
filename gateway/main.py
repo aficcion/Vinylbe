@@ -527,6 +527,19 @@ async def search_artists(q: str):
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
+@app.get("/api/recommendations/progress")
+async def get_recommendations_progress():
+    if not http_client:
+        raise HTTPException(status_code=500, detail="HTTP client not initialized")
+    
+    try:
+        resp = await http_client.get(f"{RECOMMENDER_SERVICE_URL}/progress")
+        return resp.json()
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Failed to fetch progress: {str(e)}")
+        return {"status": "idle", "current": 0, "total": 0, "current_artist": ""}
+
+
 @app.post("/api/recommendations/artists")
 async def get_artist_recommendations(request: dict):
     if not http_client:

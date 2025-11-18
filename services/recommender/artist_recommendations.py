@@ -28,10 +28,13 @@ CLIENT = httpx.Client(
 class StudioAlbum:
     def __init__(self, title: str, year: str, discogs_master_id: str,
                  artist_name: str, rating: Optional[float] = None,
-                 votes: Optional[int] = None, cover_image: Optional[str] = None):
+                 votes: Optional[int] = None, cover_image: Optional[str] = None,
+                 discogs_release_id: Optional[str] = None, discogs_type: str = "master"):
         self.title = title
         self.year = year
         self.discogs_master_id = discogs_master_id
+        self.discogs_release_id = discogs_release_id
+        self.discogs_type = discogs_type
         self.artist_name = artist_name
         self.rating = rating
         self.votes = votes
@@ -129,6 +132,76 @@ def _discogs_get(path: str, params: Dict[str, Any],
     return r.json()
 
 
+def _search_discogs_master(artist_name: str, album_title: str, key: str, secret: str) -> Optional[str]:
+    """Fallback: Search Discogs for master_id by artist + album title"""
+    try:
+        query = f"{artist_name} {album_title}"
+        data = _discogs_get("/database/search", {
+            "q": query,
+            "type": "master",
+            "per_page": 5
+        }, key, secret, sleep_after_ok=0.5)
+        
+        results = data.get("results", [])
+        if not results:
+            return None
+        
+        for result in results:
+            result_title = result.get("title", "").lower()
+            if album_title.lower() in result_title:
+                return str(result.get("id", ""))
+        
+        return str(results[0].get("id", "")) if results else None
+    except Exception:
+        return None
+
+
+def _search_discogs_release(artist_name: str, album_title: str, key: str, secret: str) -> Optional[str]:
+    """Second fallback: Search Discogs for release_id by artist + album title"""
+    try:
+        query = f"{artist_name} {album_title}"
+        data = _discogs_get("/database/search", {
+            "q": query,
+            "type": "release",
+            "format": "vinyl",
+            "per_page": 5
+        }, key, secret, sleep_after_ok=0.5)
+        
+        results = data.get("results", [])
+        if not results:
+            return None
+        
+        for result in results:
+            result_title = result.get("title", "").lower()
+            if album_title.lower() in result_title:
+                return str(result.get("id", ""))
+        
+        return str(results[0].get("id", "")) if results else None
+    except Exception:
+        return None
+
+
+def _discogs_release_data(release_id: str, key: str, secret: str) -> Tuple[Optional[float], Optional[int], Optional[str]]:
+    """Get rating and cover from a Discogs release (not master)"""
+    if not release_id:
+        return None, None, None
+    
+    try:
+        rel = _discogs_get(f"/releases/{release_id}", {}, key, secret)
+        rr = (rel.get("community") or {}).get("rating") or {}
+        
+        cover_image = None
+        rel_images = rel.get("images", [])
+        if rel_images and len(rel_images) > 0:
+            cover_image = rel_images[0].get("uri")
+        
+        if rr.get("average") is None:
+            return None, None, cover_image
+        return float(rr["average"]), int(rr.get("count", 0)), cover_image
+    except Exception:
+        return None, None, None
+
+
 def _discogs_master_data(master_id: str, key: str, secret: str) -> Tuple[Optional[float], Optional[int], Optional[str]]:
     if not master_id:
         return None, None, None
@@ -192,34 +265,64 @@ def get_artist_studio_albums(artist_name: str, discogs_key: str, discogs_secret:
         )
         studio_albums.append(album)
     
-    albums_with_master = [a for a in studio_albums if a.discogs_master_id]
+    albums_with_discogs = []
+    albums_without_discogs = []
+    
+    for album in studio_albums:
+        if album.discogs_master_id:
+            albums_with_discogs.append(album)
+        else:
+            albums_without_discogs.append(album)
+    
+    for album in albums_without_discogs:
+        master_id = _search_discogs_master(artist_name, album.title, discogs_key, discogs_secret)
+        if master_id:
+            album.discogs_master_id = master_id
+            album.discogs_type = "master"
+            albums_with_discogs.append(album)
+        else:
+            release_id = _search_discogs_release(artist_name, album.title, discogs_key, discogs_secret)
+            if release_id:
+                album.discogs_release_id = release_id
+                album.discogs_type = "release"
+                albums_with_discogs.append(album)
     
     def fetch_data(album: StudioAlbum) -> StudioAlbum:
-        rating, votes, cover_image = _discogs_master_data(album.discogs_master_id, discogs_key, discogs_secret)
+        if album.discogs_type == "master" and album.discogs_master_id:
+            rating, votes, cover_image = _discogs_master_data(album.discogs_master_id, discogs_key, discogs_secret)
+        elif album.discogs_type == "release" and album.discogs_release_id:
+            rating, votes, cover_image = _discogs_release_data(album.discogs_release_id, discogs_key, discogs_secret)
+        else:
+            rating, votes, cover_image = None, None, None
+        
         album.rating = rating
         album.votes = votes
         album.cover_image = cover_image
         return album
     
     with ThreadPoolExecutor(max_workers=5) as executor:
-        future_to_album = {executor.submit(fetch_data, album): album for album in albums_with_master}
+        future_to_album = {executor.submit(fetch_data, album): album for album in albums_with_discogs}
         for future in as_completed(future_to_album):
             try:
                 future.result()
             except Exception:
                 pass
     
-    rated_albums = [a for a in albums_with_master if a.rating is not None]
+    rated_albums = [a for a in albums_with_discogs if a.rating is not None]
     rated_albums.sort(key=lambda a: (a.rating or 0, a.votes or 0), reverse=True)
     
     return rated_albums[:top_n]
 
 
 def get_artist_based_recommendations(artist_names: List[str], discogs_key: str,
-                                      discogs_secret: str, top_per_artist: int = 3) -> List[Dict[str, Any]]:
+                                      discogs_secret: str, top_per_artist: int = 3,
+                                      progress_callback=None) -> List[Dict[str, Any]]:
     all_albums: List[StudioAlbum] = []
     
-    for artist_name in artist_names:
+    for idx, artist_name in enumerate(artist_names, 1):
+        if progress_callback:
+            progress_callback(idx, artist_name)
+        
         artist_albums = get_artist_studio_albums(artist_name, discogs_key, discogs_secret, top_n=top_per_artist)
         all_albums.extend(artist_albums)
     
@@ -233,7 +336,8 @@ def get_artist_based_recommendations(artist_names: List[str], discogs_key: str,
             "year": album.year,
             "rating": album.rating,
             "votes": album.votes,
-            "discogs_master_id": album.discogs_master_id,
+            "discogs_master_id": album.discogs_master_id or album.discogs_release_id,
+            "discogs_type": album.discogs_type,
             "image_url": album.cover_image or "https://via.placeholder.com/300x300?text=No+Cover",
             "source": "artist_based"
         }

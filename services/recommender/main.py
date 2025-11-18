@@ -18,6 +18,13 @@ from .artist_recommendations import get_artist_based_recommendations
 scoring_engine = None
 album_aggregator = None
 
+progress_state = {
+    "current": 0,
+    "total": 0,
+    "status": "idle",
+    "current_artist": ""
+}
+
 
 class ArtistRecommendationRequest(BaseModel):
     artist_names: List[str]
@@ -97,8 +104,15 @@ async def aggregate_albums(scored_tracks: List[dict], scored_artists: List[dict]
     return {"albums": albums, "total": len(albums)}
 
 
+@app.get("/progress")
+async def get_progress():
+    return progress_state
+
+
 @app.post("/artist-recommendations")
 async def artist_recommendations(request: ArtistRecommendationRequest):
+    global progress_state
+    
     discogs_key = os.getenv("DISCOGS_KEY")
     discogs_secret = os.getenv("DISCOGS_SECRET")
     
@@ -111,17 +125,36 @@ async def artist_recommendations(request: ArtistRecommendationRequest):
     if len(request.artist_names) > 10:
         raise HTTPException(status_code=400, detail="Maximum 10 artists allowed")
     
+    progress_state = {
+        "current": 0,
+        "total": len(request.artist_names),
+        "status": "processing",
+        "current_artist": ""
+    }
+    
     log_event("recommender-service", "INFO", f"Generating recommendations for {len(request.artist_names)} artists")
     
-    recommendations = get_artist_based_recommendations(
-        request.artist_names,
-        discogs_key,
-        discogs_secret,
-        top_per_artist=request.top_per_artist
-    )
+    def update_progress(current: int, artist_name: str):
+        global progress_state
+        progress_state["current"] = current
+        progress_state["current_artist"] = artist_name
     
-    log_event("recommender-service", "INFO", f"Generated {len(recommendations)} artist-based recommendations")
-    return {"recommendations": recommendations, "total": len(recommendations)}
+    try:
+        recommendations = get_artist_based_recommendations(
+            request.artist_names,
+            discogs_key,
+            discogs_secret,
+            top_per_artist=request.top_per_artist,
+            progress_callback=update_progress
+        )
+        
+        progress_state["status"] = "completed"
+        
+        log_event("recommender-service", "INFO", f"Generated {len(recommendations)} artist-based recommendations")
+        return {"recommendations": recommendations, "total": len(recommendations)}
+    except Exception as e:
+        progress_state["status"] = "error"
+        raise e
 
 
 @app.post("/merge-recommendations")
