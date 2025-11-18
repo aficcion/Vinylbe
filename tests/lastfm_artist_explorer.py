@@ -85,9 +85,12 @@ class Artist:
 # =========================
 
 class LastFMClient:
-    def __init__(self, api_key: str, base_url: str = LASTFM_BASE_URL) -> None:
+    def __init__(self, api_key: str, base_url: str = LASTFM_BASE_URL, 
+                 discogs_key: Optional[str] = None, discogs_secret: Optional[str] = None) -> None:
         self.api_key = api_key
         self.base_url = base_url
+        self.discogs_key = discogs_key
+        self.discogs_secret = discogs_secret
 
     def _build_params(self, method: str, extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
         params = {
@@ -120,10 +123,15 @@ class LastFMClient:
         except httpx.HTTPError:
             return None
 
-    def search_artists(self, query: str, limit: int = 10) -> List[Artist]:
-        """Last.fm artist.search"""
+    def search_artists(self, query: str, limit: int = 5) -> Tuple[List[Artist], float]:
+        """
+        Last.fm artist.search con fallback a Discogs para imágenes.
+        Devuelve (lista de artistas, tiempo en segundos).
+        """
+        start_time = time.time()
+        
         if not query.strip():
-            return []
+            return [], 0.0
 
         params = self._build_params(
             "artist.search",
@@ -139,7 +147,7 @@ class LastFMClient:
             resp.raise_for_status()
         except httpx.HTTPError as e:
             st.error(f"Error al consultar Last.fm (search): {e}")
-            return []
+            return [], time.time() - start_time
 
         data = resp.json()
         results = data.get("results", {}).get("artistmatches", {}).get("artist", [])
@@ -160,8 +168,13 @@ class LastFMClient:
                 if artist_info:
                     image_url = self._extract_best_image(artist_info.get("image"))
             
+            if not image_url and self.discogs_key and self.discogs_secret:
+                image_url = _get_discogs_artist_image(name, self.discogs_key, self.discogs_secret)
+            
             artists.append(Artist(name=name, mbid=mbid, image_url=image_url))
-        return artists
+        
+        elapsed = time.time() - start_time
+        return artists, elapsed
 
     def get_similar_artists(
         self,
@@ -169,15 +182,20 @@ class LastFMClient:
         name: Optional[str] = None,
         mbid: Optional[str] = None,
         limit: int = 50,
-    ) -> List[Artist]:
-        """Last.fm artist.getSimilar (prioriza mbid si lo hay)."""
+    ) -> Tuple[List[Artist], float]:
+        """
+        Last.fm artist.getSimilar con fallback a Discogs para imágenes.
+        Devuelve (lista de artistas, tiempo en segundos).
+        """
+        start_time = time.time()
+        
         extra: Dict[str, str] = {"limit": str(limit)}
         if mbid:
             extra["mbid"] = mbid
         elif name:
             extra["artist"] = name
         else:
-            return []
+            return [], 0.0
 
         params = self._build_params("artist.getSimilar", extra)
 
@@ -187,7 +205,7 @@ class LastFMClient:
             resp.raise_for_status()
         except httpx.HTTPError as e:
             st.error(f"Error al consultar Last.fm (similar): {e}")
-            return []
+            return [], time.time() - start_time
 
         data = resp.json()
         results = data.get("similarartists", {}).get("artist", [])
@@ -197,19 +215,24 @@ class LastFMClient:
 
         artists: List[Artist] = []
         for item in results:
-            name = item.get("name")
-            if not name:
+            artist_name = item.get("name")
+            if not artist_name:
                 continue
             mbid_val = item.get("mbid") or None
             image_url = self._extract_best_image(item.get("image"))
             
             if not image_url:
-                artist_info = self.get_artist_info(name=name, mbid=mbid_val)
+                artist_info = self.get_artist_info(name=artist_name, mbid=mbid_val)
                 if artist_info:
                     image_url = self._extract_best_image(artist_info.get("image"))
             
-            artists.append(Artist(name=name, mbid=mbid_val, image_url=image_url))
-        return artists
+            if not image_url and self.discogs_key and self.discogs_secret:
+                image_url = _get_discogs_artist_image(artist_name, self.discogs_key, self.discogs_secret)
+            
+            artists.append(Artist(name=artist_name, mbid=mbid_val, image_url=image_url))
+        
+        elapsed = time.time() - start_time
+        return artists, elapsed
 
     @staticmethod
     def _is_placeholder_image(url: str) -> bool:
@@ -388,6 +411,41 @@ def _discogs_master_rating(master_id: str, key: str, secret: str, debug: bool = 
     return float(rr["average"]), int(rr.get("count", 0))
 
 
+def _get_discogs_artist_image(artist_name: str, key: str, secret: str, debug: bool = False) -> Optional[str]:
+    """
+    Busca un artista en Discogs y devuelve la URL de su imagen de alta calidad.
+    Devuelve None si no se encuentra el artista o no tiene imagen.
+    """
+    if not artist_name or not key or not secret:
+        return None
+    
+    try:
+        data = _discogs_get(
+            "/database/search",
+            {"q": artist_name, "type": "artist"},
+            key,
+            secret,
+            sleep_after_ok=0.25,
+            debug=debug
+        )
+        
+        results = data.get("results", [])
+        if not results:
+            return None
+        
+        first_result = results[0]
+        cover_image = first_result.get("cover_image")
+        
+        if cover_image and cover_image.strip():
+            return cover_image
+        
+        return None
+    except Exception as e:
+        if debug:
+            st.write(f"[Discogs] Error buscando imagen para {artist_name}: {e}")
+        return None
+
+
 # =========================
 # Parallel rating fetcher
 # =========================
@@ -480,10 +538,16 @@ def mb_dataframe(
 def build_suggestions(
     client: LastFMClient,
     selected: List[Artist],
-    limit: int = 10,
-) -> List[Artist]:
+    limit: int = 5,
+) -> Tuple[List[Artist], float]:
+    """
+    Genera sugerencias basadas en artistas seleccionados.
+    Devuelve (lista de artistas sugeridos, tiempo total en segundos).
+    """
+    start_time = time.time()
+    
     if not selected or limit <= 0:
-        return []
+        return [], 0.0
 
     base_weight = 0.6
     step = 0.3
@@ -493,7 +557,7 @@ def build_suggestions(
 
     for idx, seed in enumerate(selected):
         weight = base_weight + step * idx
-        similars = client.get_similar_artists(name=seed.name, mbid=seed.mbid, limit=50)
+        similars, _ = client.get_similar_artists(name=seed.name, mbid=seed.mbid, limit=50)
 
         for rank, artist in enumerate(similars):
             key = (artist.mbid, artist.name.lower())
@@ -528,7 +592,8 @@ def build_suggestions(
         if len(suggestions) >= limit:
             break
 
-    return suggestions
+    elapsed = time.time() - start_time
+    return suggestions, elapsed
 
 
 # =========================
@@ -540,26 +605,34 @@ def init_state():
         st.session_state.selected_artists: List[Artist] = []
     if "suggested_artists" not in st.session_state:
         st.session_state.suggested_artists: List[Artist] = []
+    if "last_search_time" not in st.session_state:
+        st.session_state.last_search_time: float = 0.0
+    if "last_suggestions_time" not in st.session_state:
+        st.session_state.last_suggestions_time: float = 0.0
 
 
-def add_selected(artist: Artist, client: LastFMClient, limit: int = 10):
+def add_selected(artist: Artist, client: LastFMClient, limit: int = 5):
     for a in st.session_state.selected_artists:
         if a.name.lower() == artist.name.lower() and (
             (not a.mbid and not artist.mbid) or (a.mbid == artist.mbid)
         ):
             return
     st.session_state.selected_artists.append(artist)
-    st.session_state.suggested_artists = build_suggestions(
+    suggestions, elapsed = build_suggestions(
         client, st.session_state.selected_artists, limit=limit
     )
+    st.session_state.suggested_artists = suggestions
+    st.session_state.last_suggestions_time = elapsed
 
 
-def remove_selected(index: int, client: LastFMClient, limit: int = 10):
+def remove_selected(index: int, client: LastFMClient, limit: int = 5):
     if 0 <= index < len(st.session_state.selected_artists):
         st.session_state.selected_artists.pop(index)
-        st.session_state.suggested_artists = build_suggestions(
+        suggestions, elapsed = build_suggestions(
             client, st.session_state.selected_artists, limit=limit
         )
+        st.session_state.suggested_artists = suggestions
+        st.session_state.last_suggestions_time = elapsed
 
 
 # =========================
@@ -577,21 +650,33 @@ def main():
         )
         st.stop()
 
-    client = LastFMClient(api_key=LASTFM_API_KEY)
+    client = LastFMClient(
+        api_key=LASTFM_API_KEY,
+        discogs_key=DISCOGS_KEY,
+        discogs_secret=DISCOGS_SECRET
+    )
     init_state()
 
     if not DISCOGS_KEY or not DISCOGS_SECRET:
         st.warning(
-            "No se han encontrado `DISCOGS_KEY` y/o `DISCOGS_SECRET`. "
-            "Se mostrarán los discos de estudio pero sin rating de Discogs."
+            "⚠️ No se han encontrado `DISCOGS_KEY` y/o `DISCOGS_SECRET`. "
+            "Se mostrarán los discos de estudio pero sin rating ni imágenes de Discogs."
         )
 
     st.markdown(
         "Escribe un nombre de artista, añádelo a la selección y el sistema "
-        "te propondrá hasta **10 artistas similares**. Además, para cada artista "
-        "seleccionado puedes ver sus **discos de estudio** con el rating de vinilo "
-        "de Discogs (cuando esté disponible)."
+        "te propondrá hasta **5 artistas similares** con imágenes reales de Discogs. "
+        "Para cada artista seleccionado puedes ver sus **discos de estudio** con el rating de vinilo."
     )
+    
+    if st.session_state.last_search_time > 0 or st.session_state.last_suggestions_time > 0:
+        metrics_cols = st.columns(3)
+        if st.session_state.last_search_time > 0:
+            with metrics_cols[0]:
+                st.metric("⏱️ Última búsqueda", f"{st.session_state.last_search_time:.2f}s")
+        if st.session_state.last_suggestions_time > 0:
+            with metrics_cols[1]:
+                st.metric("⏱️ Generación sugerencias", f"{st.session_state.last_suggestions_time:.2f}s")
 
     col_search, col_selected, col_suggestions = st.columns([2, 2, 3])
 
@@ -606,7 +691,8 @@ def main():
 
         search_results: List[Artist] = []
         if st.session_state.search_box and len(st.session_state.search_box.strip()) >= 2:
-            search_results = client.search_artists(st.session_state.search_box.strip(), limit=10)
+            search_results, search_time = client.search_artists(st.session_state.search_box.strip(), limit=5)
+            st.session_state.last_search_time = search_time
 
         if query and not search_results:
             st.info("No se han encontrado artistas para esa búsqueda.")
@@ -625,7 +711,7 @@ def main():
                         st.caption(f"mbid: {artist.mbid}")
 
                     if st.button("➕ Añadir", key=f"add_search_{artist.name}_{i}"):
-                        add_selected(artist, client, limit=10)
+                        add_selected(artist, client, limit=5)
                         st.rerun()
 
     # -------- SELECCIONADOS --------
@@ -643,7 +729,7 @@ def main():
                             st.caption(f"mbid: {artist.mbid}")
                     with cols[1]:
                         if st.button("❌ Quitar", key=f"remove_sel_{idx}"):
-                            remove_selected(idx, client, limit=10)
+                            remove_selected(idx, client, limit=5)
                             st.rerun()
 
                     # Botón para ver discos de estudio
@@ -663,7 +749,7 @@ def main():
 
     # -------- SUGERENCIAS --------
     with col_suggestions:
-        st.subheader("✨ Sugerencias (hasta 10)")
+        st.subheader("✨ Sugerencias (hasta 5)")
         suggestions = st.session_state.suggested_artists
 
         if not st.session_state.selected_artists:
@@ -685,7 +771,7 @@ def main():
                             st.caption(f"mbid: {artist.mbid}")
                     with cols[2]:
                         if st.button("➕ Añadir", key=f"add_sugg_{artist.name}_{i}"):
-                            add_selected(artist, client, limit=10)
+                            add_selected(artist, client, limit=5)
                             st.rerun()
 
 
