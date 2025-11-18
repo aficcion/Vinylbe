@@ -679,43 +679,27 @@
             transform: scale(1.1);
         }
 
-        .progress-overlay {
+        .progress-banner {
             display: none;
             position: fixed;
-            top: 0;
+            top: 60px;
             left: 0;
             right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.85);
-            z-index: 2000;
-            align-items: center;
-            justify-content: center;
-            backdrop-filter: blur(4px);
-        }
-
-        .progress-overlay.active {
-            display: flex;
-            animation: fadeIn 0.3s ease;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-
-        .progress-modal {
             background: var(--bg-primary);
-            border-radius: 24px;
-            padding: 3rem 2.5rem;
-            max-width: 500px;
-            width: 90%;
-            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.4);
-            animation: slideUp 0.4s ease;
+            border-bottom: 2px solid var(--accent-color);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            padding: 1.5rem 2rem;
+            animation: slideDown 0.3s ease;
         }
 
-        @keyframes slideUp {
+        .progress-banner.active {
+            display: block;
+        }
+
+        @keyframes slideDown {
             from {
-                transform: translateY(30px);
+                transform: translateY(-100%);
                 opacity: 0;
             }
             to {
@@ -724,14 +708,26 @@
             }
         }
 
-        .progress-header {
-            text-align: center;
-            margin-bottom: 2.5rem;
+        .progress-banner-content {
+            max-width: 1200px;
+            margin: 0 auto;
         }
 
-        .progress-icon {
-            font-size: 3.5rem;
+        .progress-banner-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             margin-bottom: 1rem;
+        }
+
+        .progress-banner-title {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .progress-banner-icon {
+            font-size: 1.5rem;
             animation: pulse 2s ease-in-out infinite;
         }
 
@@ -740,30 +736,54 @@
             50% { transform: scale(1.1); }
         }
 
-        .progress-header h2 {
-            font-size: 1.5rem;
+        .progress-banner-title h2 {
+            font-size: 1.1rem;
             margin: 0;
             color: var(--text-primary);
             font-weight: 600;
         }
 
+        .progress-banner-info {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
         .progress-bar-container {
             position: relative;
             background: var(--bg-secondary);
-            border-radius: 12px;
-            height: 12px;
-            margin-bottom: 1rem;
+            border-radius: 8px;
+            height: 8px;
             overflow: hidden;
+            flex: 1;
         }
 
         .progress-bar {
             height: 100%;
             background: linear-gradient(90deg, #1DB954 0%, #1ed760 100%);
-            border-radius: 12px;
+            border-radius: 8px;
             width: 0%;
-            transition: width 0.5s ease;
+            transition: width 0.3s ease-out;
             position: relative;
             overflow: hidden;
+        }
+
+        .progress-bar.indeterminate {
+            width: 100%;
+            background: linear-gradient(90deg, 
+                var(--bg-secondary) 0%, 
+                #1DB954 50%, 
+                var(--bg-secondary) 100%
+            );
+            background-size: 200% 100%;
+            animation: indeterminateProgress 1.5s ease-in-out infinite;
+        }
+
+        @keyframes indeterminateProgress {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
         }
 
         .progress-bar::after {
@@ -788,48 +808,26 @@
         }
 
         .progress-percentage {
-            display: block;
-            text-align: center;
-            font-size: 1.1rem;
+            font-size: 0.9rem;
             font-weight: 600;
             color: var(--accent-color);
-            margin-top: 0.5rem;
+            min-width: 45px;
+            text-align: right;
         }
 
-        .progress-details {
-            text-align: center;
-            margin-top: 2rem;
-            min-height: 60px;
-        }
-
-        .progress-details p {
-            margin: 0.5rem 0;
-            font-size: 1rem;
-            color: var(--text-secondary);
-        }
-
-        #progress-status {
+        .progress-status-text {
             font-weight: 500;
             color: var(--text-primary);
-            font-size: 1.1rem;
         }
 
-        #progress-current-artist {
-            font-size: 0.95rem;
+        .progress-artist-text {
             color: var(--accent-color);
             font-weight: 500;
         }
 
-        .progress-time {
-            text-align: center;
-            margin-top: 1.5rem;
-            padding-top: 1.5rem;
-            border-top: 1px solid var(--border-color);
-        }
-
-        .progress-time span {
-            font-size: 0.9rem;
+        .progress-time-text {
             color: var(--text-secondary);
+            font-size: 0.85rem;
         }
     </style>
 </head>
@@ -934,25 +932,25 @@
         </div>
     </div>
 
-    <div class="progress-overlay" id="progress-modal">
-        <div class="progress-modal">
-            <div class="progress-header">
-                <div class="progress-icon">🎵</div>
-                <h2 id="progress-title">Generando Recomendaciones</h2>
+    <div class="progress-banner" id="progress-banner" role="status" aria-live="polite">
+        <div class="progress-banner-content">
+            <div class="progress-banner-header">
+                <div class="progress-banner-title">
+                    <span class="progress-banner-icon">🎵</span>
+                    <h2 id="progress-title">Generando Recomendaciones</h2>
+                </div>
+                <div class="progress-banner-info">
+                    <span id="progress-status" class="progress-status-text">Iniciando...</span>
+                    <span id="progress-current-artist" class="progress-artist-text"></span>
+                    <span id="progress-time-estimate" class="progress-time-text"></span>
+                </div>
             </div>
             
-            <div class="progress-bar-container">
-                <div class="progress-bar" id="progress-bar"></div>
+            <div style="display: flex; align-items: center; gap: 1rem;">
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="progress-bar"></div>
+                </div>
                 <span class="progress-percentage" id="progress-percentage">0%</span>
-            </div>
-            
-            <div class="progress-details">
-                <p id="progress-status">Iniciando...</p>
-                <p id="progress-current-artist"></p>
-            </div>
-            
-            <div class="progress-time">
-                <span id="progress-time-estimate"></span>
             </div>
         </div>
     </div>
