@@ -196,9 +196,15 @@ def _discogs_release_data(release_id: str, key: str, secret: str) -> Tuple[Optio
             cover_image = rel_images[0].get("uri")
         
         if rr.get("average") is None:
+            print(f"[RATING] Release {release_id}: NO RATING")
             return None, None, cover_image
-        return float(rr["average"]), int(rr.get("count", 0)), cover_image
-    except Exception:
+        
+        rating = float(rr["average"])
+        votes = int(rr.get("count", 0))
+        print(f"[RATING] Release {release_id}: rating={rating}, votes={votes}")
+        return rating, votes, cover_image
+    except Exception as e:
+        print(f"[RATING] Release {release_id}: ERROR - {str(e)}")
         return None, None, None
 
 
@@ -216,12 +222,17 @@ def _discogs_master_data(master_id: str, key: str, secret: str) -> Tuple[Optiona
             cover_image = images[0].get("uri")
         
         if r.get("average") is not None:
-            return float(r["average"]), int(r.get("count", 0)), cover_image
+            rating = float(r["average"])
+            votes = int(r.get("count", 0))
+            print(f"[RATING] Master {master_id}: rating={rating}, votes={votes} (from master)")
+            return rating, votes, cover_image
 
         main_rel = data.get("main_release")
         if not main_rel:
+            print(f"[RATING] Master {master_id}: NO RATING (no master rating, no main_release)")
             return None, None, cover_image
 
+        print(f"[RATING] Master {master_id}: No master rating, checking main_release {main_rel}")
         rel = _discogs_get(f"/releases/{main_rel}", {}, key, secret)
         rr = (rel.get("community") or {}).get("rating") or {}
         
@@ -231,9 +242,15 @@ def _discogs_master_data(master_id: str, key: str, secret: str) -> Tuple[Optiona
                 cover_image = rel_images[0].get("uri")
         
         if rr.get("average") is None:
+            print(f"[RATING] Master {master_id}: NO RATING (main_release {main_rel} has no rating)")
             return None, None, cover_image
-        return float(rr["average"]), int(rr.get("count", 0)), cover_image
-    except Exception:
+        
+        rating = float(rr["average"])
+        votes = int(rr.get("count", 0))
+        print(f"[RATING] Master {master_id}: rating={rating}, votes={votes} (from main_release {main_rel})")
+        return rating, votes, cover_image
+    except Exception as e:
+        print(f"[RATING] Master {master_id}: ERROR - {str(e)}")
         return None, None, None
 
 
@@ -288,16 +305,25 @@ def get_artist_studio_albums(artist_name: str, discogs_key: str, discogs_secret:
                 albums_with_discogs.append(album)
     
     def fetch_data(album: StudioAlbum) -> StudioAlbum:
+        print(f"[ALBUM] Fetching rating for '{album.title}' ({album.year}) by {album.artist_name}")
+        
         if album.discogs_type == "master" and album.discogs_master_id:
             rating, votes, cover_image = _discogs_master_data(album.discogs_master_id, discogs_key, discogs_secret)
         elif album.discogs_type == "release" and album.discogs_release_id:
             rating, votes, cover_image = _discogs_release_data(album.discogs_release_id, discogs_key, discogs_secret)
         else:
+            print(f"[ALBUM] '{album.title}': No Discogs ID available")
             rating, votes, cover_image = None, None, None
         
         album.rating = rating
         album.votes = votes
         album.cover_image = cover_image
+        
+        if rating is not None:
+            print(f"[ALBUM] ✓ '{album.title}': FINAL rating={rating}, votes={votes}")
+        else:
+            print(f"[ALBUM] ✗ '{album.title}': NO RATING - will be discarded")
+        
         return album
     
     with ThreadPoolExecutor(max_workers=5) as executor:
