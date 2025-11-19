@@ -13,7 +13,7 @@ from libs.shared.models import ServiceHealth
 from libs.shared.utils import log_event
 from .scoring_engine import ScoringEngine
 from .album_aggregator import AlbumAggregator
-from .artist_recommendations import get_artist_based_recommendations
+from .artist_recommendations import get_artist_based_recommendations, get_artist_studio_albums
 
 scoring_engine = None
 album_aggregator = None
@@ -34,6 +34,11 @@ class ArtistRecommendationRequest(BaseModel):
 class MergeRecommendationsRequest(BaseModel):
     spotify_recommendations: List[dict]
     artist_recommendations: List[dict]
+
+
+class SingleArtistRequest(BaseModel):
+    artist_name: str
+    top_albums: int = 3
 
 
 @asynccontextmanager
@@ -195,3 +200,48 @@ async def merge_recommendations(request: MergeRecommendationsRequest):
     elapsed = time.time() - start_time
     log_event("recommender-service", "INFO", f"Merged into {len(merged)} total recommendations in {elapsed:.2f}s")
     return {"recommendations": merged, "total": len(merged)}
+
+
+@app.post("/artist-single-recommendation")
+async def artist_single_recommendation(request: SingleArtistRequest):
+    import time
+    start_time = time.time()
+    
+    discogs_key = os.getenv("DISCOGS_KEY")
+    discogs_secret = os.getenv("DISCOGS_SECRET")
+    
+    if not discogs_key or not discogs_secret:
+        raise HTTPException(status_code=500, detail="Discogs credentials not configured")
+    
+    log_event("recommender-service", "INFO", f"Generating recommendations for artist: {request.artist_name}")
+    
+    try:
+        albums = get_artist_studio_albums(
+            request.artist_name,
+            discogs_key,
+            discogs_secret,
+            top_n=request.top_albums
+        )
+        
+        recommendations = []
+        for album in albums:
+            rec = {
+                "album_name": album.title,
+                "artist_name": album.artist_name,
+                "year": album.year,
+                "rating": album.rating,
+                "votes": album.votes,
+                "discogs_master_id": album.discogs_master_id or album.discogs_release_id,
+                "discogs_type": album.discogs_type,
+                "image_url": album.cover_image or "https://via.placeholder.com/300x300?text=No+Cover",
+                "source": "artist_based"
+            }
+            recommendations.append(rec)
+        
+        elapsed = time.time() - start_time
+        log_event("recommender-service", "INFO", 
+                 f"Generated {len(recommendations)} recommendations for {request.artist_name} in {elapsed:.2f}s")
+        return {"recommendations": recommendations, "total": len(recommendations), "artist_name": request.artist_name}
+    except Exception as e:
+        log_event("recommender-service", "ERROR", f"Failed to generate recommendations for {request.artist_name}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate recommendations: {str(e)}")

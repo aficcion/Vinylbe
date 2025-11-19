@@ -12,6 +12,8 @@ class ArtistSearch {
         this.selectedArtists = [];
         this.searchResults = [];
         this.searchTimeout = null;
+        this.recommendationsCache = {};
+        this.loadingArtists = new Set();
         
         this.render();
         this.attachEventListeners();
@@ -177,19 +179,69 @@ class ArtistSearch {
         });
     }
     
-    addArtist(artist) {
+    async addArtist(artist) {
         if (this.selectedArtists.length >= this.options.maxArtists) {
             return;
         }
         
         if (!this.selectedArtists.some(a => a.name === artist.name)) {
             this.selectedArtists.push(artist);
+            this.loadingArtists.add(artist.name);
             this.updateUI();
+            
+            try {
+                const response = await fetch('/api/recommendations/artist-single', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ artist_name: artist.name, top_albums: 3 })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const recs = data.recommendations || [];
+                    if (recs.length > 0) {
+                        this.recommendationsCache[artist.name] = {
+                            status: 'success',
+                            recommendations: recs,
+                            timestamp: Date.now()
+                        };
+                        console.log(`✓ Cached ${recs.length} recommendations for ${artist.name}`);
+                    } else {
+                        this.recommendationsCache[artist.name] = {
+                            status: 'error',
+                            error: 'No albums found',
+                            timestamp: Date.now()
+                        };
+                        console.warn(`⚠ No albums found for ${artist.name}`);
+                    }
+                } else {
+                    const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+                    this.recommendationsCache[artist.name] = {
+                        status: 'error',
+                        error: errorData.detail || `HTTP ${response.status}`,
+                        timestamp: Date.now()
+                    };
+                    console.error(`✗ Failed to get recommendations for ${artist.name}: ${errorData.detail}`);
+                }
+            } catch (error) {
+                this.recommendationsCache[artist.name] = {
+                    status: 'error',
+                    error: error.message || 'Network error',
+                    timestamp: Date.now()
+                };
+                console.error(`✗ Error fetching recommendations for ${artist.name}:`, error);
+            } finally {
+                this.loadingArtists.delete(artist.name);
+                this.updateUI();
+            }
         }
     }
     
     removeArtist(artistName) {
         this.selectedArtists = this.selectedArtists.filter(a => a.name !== artistName);
+        delete this.recommendationsCache[artistName];
+        this.loadingArtists.delete(artistName);
+        console.log(`✗ Removed ${artistName} and its cached recommendations`);
         this.updateUI();
     }
     
@@ -209,16 +261,26 @@ class ArtistSearch {
             return;
         }
         
-        pillsContainer.innerHTML = this.selectedArtists.map(artist => `
-            <div class="artist-pill">
-                ${artist.image_url 
-                    ? `<img src="${artist.image_url}" alt="${artist.name}" class="pill-image" />`
-                    : ''
-                }
-                <span class="pill-name">${artist.name}</span>
-                <button class="pill-remove-btn" data-artist-name="${artist.name}">✕</button>
-            </div>
-        `).join('');
+        pillsContainer.innerHTML = this.selectedArtists.map(artist => {
+            const isLoading = this.loadingArtists.has(artist.name);
+            const cached = this.recommendationsCache[artist.name];
+            const hasSuccess = cached && cached.status === 'success';
+            const hasError = cached && cached.status === 'error';
+            
+            return `
+                <div class="artist-pill ${isLoading ? 'loading' : ''} ${hasSuccess ? 'cached' : ''} ${hasError ? 'error' : ''}">
+                    ${artist.image_url 
+                        ? `<img src="${artist.image_url}" alt="${artist.name}" class="pill-image" />`
+                        : ''
+                    }
+                    <span class="pill-name">${artist.name}</span>
+                    ${isLoading ? '<span class="pill-spinner">⏳</span>' : ''}
+                    ${!isLoading && hasSuccess ? '<span class="pill-check">✓</span>' : ''}
+                    ${!isLoading && hasError ? '<span class="pill-error" title="' + (cached.error || 'Error') + '">⚠</span>' : ''}
+                    <button class="pill-remove-btn" data-artist-name="${artist.name}">✕</button>
+                </div>
+            `;
+        }).join('');
         
         const removeButtons = pillsContainer.querySelectorAll('.pill-remove-btn');
         removeButtons.forEach(btn => {
@@ -260,5 +322,57 @@ class ArtistSearch {
     setSelectedArtists(artists) {
         this.selectedArtists = artists;
         this.updateUI();
+    }
+    
+    getCachedRecommendations() {
+        const allRecommendations = [];
+        for (const artistName of this.selectedArtists.map(a => a.name)) {
+            const cached = this.recommendationsCache[artistName];
+            if (cached && cached.status === 'success' && cached.recommendations) {
+                allRecommendations.push(...cached.recommendations);
+            }
+        }
+        return allRecommendations;
+    }
+    
+    isLoadingComplete() {
+        if (this.loadingArtists.size > 0) {
+            return false;
+        }
+        return this.selectedArtists.every(artist => {
+            const cached = this.recommendationsCache[artist.name];
+            return cached !== undefined;
+        });
+    }
+    
+    hasAllSuccessful() {
+        if (this.selectedArtists.length === 0) {
+            return false;
+        }
+        return this.selectedArtists.every(artist => {
+            const cached = this.recommendationsCache[artist.name];
+            return cached && cached.status === 'success';
+        });
+    }
+    
+    getLoadingStatus() {
+        const successCount = this.selectedArtists.filter(artist => {
+            const cached = this.recommendationsCache[artist.name];
+            return cached && cached.status === 'success';
+        }).length;
+        
+        const errorCount = this.selectedArtists.filter(artist => {
+            const cached = this.recommendationsCache[artist.name];
+            return cached && cached.status === 'error';
+        }).length;
+        
+        return {
+            total: this.selectedArtists.length,
+            success: successCount,
+            error: errorCount,
+            loading: this.loadingArtists.size,
+            isComplete: this.isLoadingComplete(),
+            hasAllSuccessful: this.hasAllSuccessful()
+        };
     }
 }

@@ -308,3 +308,39 @@
 .error {
     color: var(--error);
 }
+
+.artist-pill.loading {
+    opacity: 0.8;
+}
+
+.artist-pill.cached {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.pill-spinner {
+    animation: spin 1s linear infinite;
+    font-size: 14px;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.pill-check {
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.pill-error {
+    font-size: 14px;
+    cursor: help;
+}
+
+.artist-pill.error {
+    background: linear-gradient(135deg, #f56565 0%, #c53030 100%);
+}

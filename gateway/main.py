@@ -540,6 +540,55 @@ async def get_recommendations_progress():
         return {"status": "idle", "current": 0, "total": 0, "current_artist": ""}
 
 
+@app.post("/api/recommendations/artist-single")
+async def get_single_artist_recommendations(request: dict):
+    if not http_client:
+        raise HTTPException(status_code=500, detail="HTTP client not initialized")
+    
+    artist_name = request.get("artist_name")
+    top_albums = request.get("top_albums", 3)
+    
+    if not artist_name:
+        raise HTTPException(status_code=400, detail="artist_name is required")
+    
+    start_time = time.time()
+    log_event("gateway", "INFO", f"Getting recommendations for artist: {artist_name}")
+    
+    try:
+        resp = await http_client.post(
+            f"{RECOMMENDER_SERVICE_URL}/artist-single-recommendation",
+            json={"artist_name": artist_name, "top_albums": top_albums}
+        )
+        resp.raise_for_status()
+        result = resp.json()
+        
+        end_time = time.time()
+        total_time = end_time - start_time
+        
+        recommendations = result.get("recommendations", [])
+        
+        if not recommendations:
+            log_event("gateway", "WARNING", f"No recommendations found for {artist_name}")
+            raise HTTPException(status_code=404, detail=f"No albums found for artist: {artist_name}")
+        
+        log_event("gateway", "INFO", 
+                 f"Got {len(recommendations)} recommendations for {artist_name} in {total_time:.2f}s")
+        
+        return {
+            "recommendations": recommendations,
+            "total": len(recommendations),
+            "artist_name": artist_name,
+            "total_time_seconds": round(total_time, 2),
+            "status": "success"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Single artist recommendations failed for {artist_name}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Recommendations failed: {str(e)}")
+
+
 @app.post("/api/recommendations/artists")
 async def get_artist_recommendations(request: dict):
     if not http_client:

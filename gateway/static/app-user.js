@@ -517,8 +517,26 @@ async function handleArtistSelection(selectedArtists) {
     localStorage.setItem('selected_artist_names', JSON.stringify(artistNames));
     
     const hasSpotifyConnected = localStorage.getItem('has_spotify_connected') === 'true';
-    const title = hasSpotifyConnected ? 'Combinando Recomendaciones' : 'Generando Recomendaciones';
     
+    const cachedRecs = artistSearchComponent ? artistSearchComponent.getCachedRecommendations() : [];
+    const loadingStatus = artistSearchComponent ? artistSearchComponent.getLoadingStatus() : { hasAllSuccessful: false };
+    
+    console.log(`Cache status: ${cachedRecs.length} recommendations, ${loadingStatus.success}/${loadingStatus.total} successful, ${loadingStatus.error} errors, all successful: ${loadingStatus.hasAllSuccessful}`);
+    
+    if (!hasSpotifyConnected && loadingStatus.hasAllSuccessful && cachedRecs.length > 0) {
+        console.log('✓ Using cached artist recommendations (no Spotify merge needed, all successful)');
+        const formattedRecs = formatArtistRecommendations(cachedRecs);
+        localStorage.setItem('last_recommendations', JSON.stringify(formattedRecs));
+        localStorage.setItem('last_updated', new Date().toISOString());
+        renderRecommendations(formattedRecs);
+        return;
+    }
+    
+    if (loadingStatus.error > 0) {
+        console.log(`⚠ ${loadingStatus.error} artists failed to load, falling back to backend generation`);
+    }
+    
+    const title = hasSpotifyConnected ? 'Combinando Recomendaciones' : 'Generando Recomendaciones';
     startProgressMonitoring(title);
     
     try {
