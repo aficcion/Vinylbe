@@ -215,7 +215,7 @@ async def search_artists(q: str = Query(..., min_length=4, description="Search q
     if not LASTFM_API_KEY:
         raise HTTPException(status_code=500, detail="LASTFM_API_KEY not configured")
 
-    artists, search_time = client.search_artists_discogs(q, limit=10)
+    artists, search_time = client.search_artists_discogs(q, limit=5)
 
     return SearchResponse(
         artists=artists,
