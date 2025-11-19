@@ -51,6 +51,13 @@ class LastFMClient:
         self.discogs_key = discogs_key
         self.discogs_secret = discogs_secret
 
+    def _clean_artist_name(self, name: str) -> str:
+        """Remove Discogs ID numbers like (11), (3) from artist names"""
+        import re
+        # Remove patterns like (11), (3), (2) at the end of the name
+        cleaned = re.sub(r'\s*\(\d+\)\s*$', '', name)
+        return cleaned.strip()
+    
     def search_artists_discogs(self, query: str, limit: int = 10) -> Tuple[List[ArtistSearchResult], float]:
         start_time = time.time()
         
@@ -64,7 +71,7 @@ class LastFMClient:
                     "type": "artist",
                     "key": self.discogs_key,
                     "secret": self.discogs_secret,
-                    "per_page": str(limit),
+                    "per_page": str(limit * 2),  # Fetch more to account for duplicates
                 }
                 
                 with httpx.Client(timeout=10.0) as client:
@@ -73,20 +80,39 @@ class LastFMClient:
                 data = resp.json()
                 
                 results = data.get("results", [])
+                
+                # Track seen names and their first image
+                seen_names = {}
                 artists: List[ArtistSearchResult] = []
-                for res in results[:limit]:
-                    title = res.get("title", "")
+                
+                for res in results:
+                    raw_title = res.get("title", "")
                     thumb = res.get("thumb")
                     
-                    genres = self._get_genres_from_lastfm(title)
+                    # Clean the name
+                    clean_name = self._clean_artist_name(raw_title)
+                    
+                    # Skip if we've already seen this clean name
+                    if clean_name in seen_names:
+                        continue
+                    
+                    # Mark as seen and store the first image
+                    seen_names[clean_name] = thumb
+                    
+                    # Get genres using the CLEAN name
+                    genres = self._get_genres_from_lastfm(clean_name)
                     
                     artist = ArtistSearchResult(
-                        name=title,
+                        name=clean_name,
                         image_url=thumb,
                         genres=genres,
                         mbid=None
                     )
                     artists.append(artist)
+                    
+                    # Stop when we have enough unique artists
+                    if len(artists) >= limit:
+                        break
                 
                 elapsed = time.time() - start_time
                 return artists, elapsed
