@@ -67,6 +67,9 @@ async def health_check():
 
 @app.post("/score-tracks")
 async def score_tracks(tracks: List[dict]):
+    import time
+    start_time = time.time()
+    
     if not scoring_engine:
         raise HTTPException(status_code=500, detail="Scoring engine not initialized")
     
@@ -74,12 +77,16 @@ async def score_tracks(tracks: List[dict]):
     
     scored_tracks = scoring_engine.score_tracks(tracks)
     
-    log_event("recommender-service", "INFO", f"Scored {len(scored_tracks)} tracks")
+    elapsed = time.time() - start_time
+    log_event("recommender-service", "INFO", f"Scored {len(scored_tracks)} tracks in {elapsed:.2f}s")
     return {"scored_tracks": scored_tracks, "total": len(scored_tracks)}
 
 
 @app.post("/score-artists")
 async def score_artists(artists: List[dict]):
+    import time
+    start_time = time.time()
+    
     if not scoring_engine:
         raise HTTPException(status_code=500, detail="Scoring engine not initialized")
     
@@ -87,12 +94,16 @@ async def score_artists(artists: List[dict]):
     
     scored_artists = scoring_engine.score_artists(artists)
     
-    log_event("recommender-service", "INFO", f"Scored {len(scored_artists)} artists")
+    elapsed = time.time() - start_time
+    log_event("recommender-service", "INFO", f"Scored {len(scored_artists)} artists in {elapsed:.2f}s")
     return {"scored_artists": scored_artists, "total": len(scored_artists)}
 
 
 @app.post("/aggregate-albums")
 async def aggregate_albums(scored_tracks: List[dict], scored_artists: List[dict]):
+    import time
+    start_time = time.time()
+    
     if not album_aggregator:
         raise HTTPException(status_code=500, detail="Album aggregator not initialized")
     
@@ -100,7 +111,8 @@ async def aggregate_albums(scored_tracks: List[dict], scored_artists: List[dict]
     
     albums = album_aggregator.aggregate_albums(scored_tracks, scored_artists)
     
-    log_event("recommender-service", "INFO", f"Generated {len(albums)} album recommendations")
+    elapsed = time.time() - start_time
+    log_event("recommender-service", "INFO", f"Generated {len(albums)} album recommendations in {elapsed:.2f}s")
     return {"albums": albums, "total": len(albums)}
 
 
@@ -111,6 +123,8 @@ async def get_progress():
 
 @app.post("/artist-recommendations")
 async def artist_recommendations(request: ArtistRecommendationRequest):
+    import time
+    start_time = time.time()
     global progress_state
     
     discogs_key = os.getenv("DISCOGS_KEY")
@@ -150,7 +164,8 @@ async def artist_recommendations(request: ArtistRecommendationRequest):
         
         progress_state["status"] = "completed"
         
-        log_event("recommender-service", "INFO", f"Generated {len(recommendations)} artist-based recommendations")
+        elapsed = time.time() - start_time
+        log_event("recommender-service", "INFO", f"Generated {len(recommendations)} artist-based recommendations in {elapsed:.2f}s")
         return {"recommendations": recommendations, "total": len(recommendations)}
     except Exception as e:
         progress_state["status"] = "error"
@@ -159,6 +174,9 @@ async def artist_recommendations(request: ArtistRecommendationRequest):
 
 @app.post("/merge-recommendations")
 async def merge_recommendations(request: MergeRecommendationsRequest):
+    import time
+    start_time = time.time()
+    
     spotify_recs = request.spotify_recommendations
     artist_recs = request.artist_recommendations
     
@@ -174,5 +192,6 @@ async def merge_recommendations(request: MergeRecommendationsRequest):
         if i < len(artist_recs):
             merged.append(artist_recs[i])
     
-    log_event("recommender-service", "INFO", f"Merged into {len(merged)} total recommendations")
+    elapsed = time.time() - start_time
+    log_event("recommender-service", "INFO", f"Merged into {len(merged)} total recommendations in {elapsed:.2f}s")
     return {"recommendations": merged, "total": len(merged)}
