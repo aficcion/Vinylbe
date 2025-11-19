@@ -256,15 +256,70 @@ def _discogs_master_data(master_id: str, key: str, secret: str) -> Tuple[Optiona
 
 def get_artist_studio_albums(artist_name: str, discogs_key: str, discogs_secret: str,
                               top_n: int = 3) -> List[StudioAlbum]:
-    mbid = _find_artist_mbid(artist_name)
-    if not mbid:
+    # Buscar release-groups directamente por nombre de artista
+    print(f"[ARTIST] Searching MusicBrainz release-groups for '{artist_name}'")
+    
+    try:
+        data = _mb_get(
+            "/release-group",
+            {
+                "query": f'artist:"{artist_name}"',
+                "primary-type": "Album",
+                "limit": 100,
+            },
+            sleep_after_ok=1.0
+        )
+        release_groups = data.get("release-groups", []) or []
+        print(f"[ARTIST] Found {len(release_groups)} release-groups for '{artist_name}'")
+    except Exception as e:
+        print(f"[ARTIST] Error searching MusicBrainz: {str(e)}")
         return []
-
-    release_groups = _fetch_release_groups(mbid, limit=100)
+    
+    # No necesitamos _fetch_release_groups ya que ya tenemos los datos
+    # Pero necesitamos obtener las relaciones de Discogs para cada release-group
+    release_groups_with_rels = []
+    for rg in release_groups:
+        rg_id = rg.get("id")
+        if not rg_id:
+            continue
+        
+        try:
+            # Obtener el release-group completo con relaciones
+            rg_full = _mb_get(
+                f"/release-group/{rg_id}",
+                {"inc": "artist-credits+url-rels"},
+                sleep_after_ok=1.0
+            )
+            release_groups_with_rels.append(rg_full)
+        except Exception:
+            # Si falla, usar el release-group sin relaciones
+            release_groups_with_rels.append(rg)
+    
+    release_groups = release_groups_with_rels
     
     studio_albums: List[StudioAlbum] = []
     for rg in release_groups:
-        if not _is_studio_album(rg, mbid):
+        # Filtrar álbumes de estudio sin depender de un MBID específico
+        if rg.get("primary-type") != "Album":
+            continue
+        if rg.get("secondary-types"):
+            continue
+        
+        # Verificar que el artista coincida con el buscado
+        ac = rg.get("artist-credit") or []
+        if not ac:
+            continue
+        
+        # Buscar coincidencia de nombre de artista
+        artist_match = False
+        for credit in ac:
+            artist_obj = credit.get("artist") or {}
+            artist_rg_name = artist_obj.get("name", "").lower()
+            if artist_rg_name == artist_name.lower():
+                artist_match = True
+                break
+        
+        if not artist_match:
             continue
         
         title = rg.get("title", "")
