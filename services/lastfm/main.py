@@ -57,71 +57,70 @@ class LastFMClient:
         # Remove patterns like (11), (3), (2) at the end of the name
         cleaned = re.sub(r'\s*\(\d+\)\s*$', '', name)
         return cleaned.strip()
-    
-    def search_artists_discogs(self, query: str, limit: int = 10) -> Tuple[List[ArtistSearchResult], float]:
+
+    def search_artists_discogs(self, query: str, limit: int = 5) -> Tuple[List[ArtistSearchResult], float]:
         start_time = time.time()
-        
-        if not query.strip():
+
+        if not self.discogs_key or not self.discogs_secret:
             return [], 0.0
 
-        if self.discogs_key and self.discogs_secret:
-            try:
-                params = {
-                    "q": query.strip(),
-                    "type": "artist",
-                    "key": self.discogs_key,
-                    "secret": self.discogs_secret,
-                    "per_page": str(limit * 2),  # Fetch more to account for duplicates
-                }
-                
-                with httpx.Client(timeout=10.0) as client:
-                    resp = client.get(f"{DISCOGS_BASE}/database/search", params=params)
-                resp.raise_for_status()
-                data = resp.json()
-                
-                results = data.get("results", [])
-                
-                # Track seen names and their first image
-                seen_names = {}
-                artists: List[ArtistSearchResult] = []
-                
-                for res in results:
-                    raw_title = res.get("title", "")
-                    thumb = res.get("thumb")
-                    
-                    # Clean the name
-                    clean_name = self._clean_artist_name(raw_title)
-                    
-                    # Skip if we've already seen this clean name
-                    if clean_name in seen_names:
-                        continue
-                    
-                    # Mark as seen and store the first image
-                    seen_names[clean_name] = thumb
-                    
-                    # Get genres using the CLEAN name
-                    genres = self._get_genres_from_lastfm(clean_name)
-                    
-                    artist = ArtistSearchResult(
-                        name=clean_name,
-                        image_url=thumb,
-                        genres=genres,
-                        mbid=None
-                    )
-                    artists.append(artist)
-                    
-                    # Stop when we have enough unique artists
-                    if len(artists) >= limit:
-                        break
-                
-                elapsed = time.time() - start_time
-                return artists, elapsed
-                
-            except Exception as e:
-                logger.warning(f"Discogs search failed: {e}, falling back to Last.fm")
+        try:
+            params = {
+                "q": query.strip(),
+                "type": "artist",
+                "key": self.discogs_key,
+                "secret": self.discogs_secret,
+                "per_page": str(limit * 2),  # Fetch more to account for duplicates
+            }
+
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.get(f"{DISCOGS_BASE}/database/search", params=params)
+            resp.raise_for_status()
+            data = resp.json()
+
+            results = data.get("results", [])
+
+            # Track seen names and their first image
+            seen_names = {}
+            artists: List[ArtistSearchResult] = []
+
+            for res in results:
+                raw_title = res.get("title", "")
+                thumb = res.get("thumb")
+
+                # Clean the name
+                clean_name = self._clean_artist_name(raw_title)
+
+                # Skip if we've already seen this clean name
+                if clean_name in seen_names:
+                    continue
+
+                # Mark as seen and store the first image
+                seen_names[clean_name] = thumb
+
+                # Get genres using the CLEAN name
+                genres = self._get_genres_from_lastfm(clean_name)
+
+                artist = ArtistSearchResult(
+                    name=clean_name,
+                    image_url=thumb,
+                    genres=genres,
+                    mbid=None
+                )
+                artists.append(artist)
+
+                # Stop when we have enough unique artists
+                if len(artists) >= limit:
+                    break
+
+            elapsed = time.time() - start_time
+            return artists, elapsed
+
+        except Exception as e:
+            logger.warning(f"Discogs search failed: {e}, falling back to Last.fm")
 
         return self._search_artists_lastfm(query.strip(), limit=limit, start_time=start_time)
-    
+
     def _get_genres_from_lastfm(self, artist_name: str) -> List[str]:
         try:
             params = {
@@ -130,22 +129,22 @@ class LastFMClient:
                 "api_key": self.api_key,
                 "format": "json",
             }
-            
+
             with httpx.Client(timeout=5.0) as client:
                 resp = client.get(self.base_url, params=params)
             resp.raise_for_status()
             data = resp.json()
-            
+
             tags = data.get("toptags", {}).get("tag", [])
             if isinstance(tags, dict):
                 tags = [tags]
-            
+
             genres = []
             for tag in tags[:3]:
                 tag_name = tag.get("name", "")
                 if tag_name:
                     genres.append(tag_name)
-            
+
             return genres
         except Exception as e:
             logger.debug(f"Failed to get genres for {artist_name}: {e}")
@@ -160,28 +159,28 @@ class LastFMClient:
                 "format": "json",
                 "limit": str(limit),
             }
-            
+
             with httpx.Client(timeout=10.0) as client:
                 resp = client.get(self.base_url, params=params)
             resp.raise_for_status()
             data = resp.json()
-            
+
             results_node = data.get("results", {}).get("artistmatches", {}).get("artist", [])
             if isinstance(results_node, dict):
                 results_node = [results_node]
-            
+
             artists: List[ArtistSearchResult] = []
             for res in results_node[:limit]:
                 name = res.get("name")
                 if not name:
                     continue
-                
+
                 mbid = res.get("mbid")
                 if mbid == "":
                     mbid = None
-                
+
                 genres = self._get_genres_from_lastfm(name)
-                
+
                 artist = ArtistSearchResult(
                     name=name,
                     image_url=None,
@@ -189,10 +188,10 @@ class LastFMClient:
                     mbid=mbid
                 )
                 artists.append(artist)
-            
+
             elapsed = time.time() - start_time
             return artists, elapsed
-            
+
         except Exception as e:
             logger.error(f"Last.fm search failed: {e}")
             elapsed = time.time() - start_time
@@ -215,9 +214,9 @@ async def health():
 async def search_artists(q: str = Query(..., min_length=4, description="Search query (min 4 characters)")):
     if not LASTFM_API_KEY:
         raise HTTPException(status_code=500, detail="LASTFM_API_KEY not configured")
-    
+
     artists, search_time = client.search_artists_discogs(q, limit=10)
-    
+
     return SearchResponse(
         artists=artists,
         search_time_ms=search_time * 1000
