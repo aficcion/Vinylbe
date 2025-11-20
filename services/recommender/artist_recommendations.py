@@ -492,7 +492,7 @@ def get_artist_studio_albums(artist_name: str, discogs_key: str, discogs_secret:
         
         return album
     
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    with ThreadPoolExecutor(max_workers=2) as executor:
         future_to_album = {executor.submit(fetch_data, album): album for album in albums_with_discogs}
         for future in as_completed(future_to_album):
             try:
