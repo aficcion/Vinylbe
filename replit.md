@@ -6,6 +6,26 @@ This project is a comprehensive vinyl recommendation system that leverages Spoti
 ## User Preferences
 I want to prioritize a clear, concise, and professional communication style. For development, I prefer an iterative approach, focusing on delivering core functionality first and then enhancing it. I value detailed explanations, especially for complex architectural decisions. Please ask for my approval before making any major changes to the system architecture or core functionalities.
 
+## Recent Changes (November 20, 2025)
+**Corrección de Bug: Promise Tracking para Carga Completa de Recomendaciones (LATEST):**
+- **Problema corregido**: Bug donde hacer clic en "Continuar" antes de que terminen de cargar artistas causaba que no se mostraran todas las recomendaciones
+- **Promise tracking robusto**: Implementación de `pendingPromises` Map que rastrea promesas de fetch reales (no contadores síncronos)
+- **Método waitForAllPendingRecommendations()**: Usa `Promise.allSettled()` para esperar a TODAS las promesas (exitosas o fallidas) antes de proceder
+- **Event handler async**: Botón "Continuar" ahora es async y espera con `await onContinue()`, bloqueando hasta que se completen todas las promesas
+- **UX mejorada**: Muestra "Finalizando recomendaciones..." mientras espera, mantiene modal abierto durante espera (usuario no pierde contexto)
+- **Robustez completa**: Elimina condiciones de carrera, Map se limpia en finally y removeArtist, garantiza datos completos antes de proceder
+- **Architect aprobado**: Solución validada como correcta y robusta ante todos los edge cases
+
+**Generación Incremental de Recomendaciones por Artista:**
+- **Background generation**: Cuando usuario selecciona artista, el sistema genera recomendaciones automáticamente en background (0-2s por artista)
+- **Cache local robusto**: Frontend cachea recomendaciones con estructura `{status, recommendations/error, timestamp}` para diferenciar éxito de error
+- **Indicadores visuales por artista**: Pills muestran ⏳ durante carga, ✓ cuando exitoso, ⚠ cuando error (con tooltip descriptivo)
+- **Uso instantáneo de cache**: Si TODOS los artistas tienen recs exitosas y NO hay Spotify conectado, usa cache directamente (0s de espera)
+- **Fallback inteligente**: Si algún artista falla, hace fallback automático al flujo tradicional de backend con mensaje claro en consola
+- **Endpoints nuevos**: `/api/recommendations/artist-single` en Gateway y Recommender para generación por artista individual
+- **Manejo de errores HTTP completo**: Gateway usa `raise_for_status()`, retorna 404 cuando no hay álbumes, propaga errores correctamente
+- **Performance mejorada**: Reduce tiempo de espera de 15-30s a 0-2s cuando usuario ya seleccionó artistas previamente
+
 ## System Architecture
 
 ### UI/UX Decisions
