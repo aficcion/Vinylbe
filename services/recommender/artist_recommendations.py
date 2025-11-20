@@ -1,12 +1,12 @@
 import os
 import time
 import re
+import threading
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 import httpx
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 MB_BASE = "https://musicbrainz.org/ws/2"
 DISCOGS_BASE = "https://api.discogs.com"
@@ -28,6 +28,10 @@ CLIENT = httpx.Client(
 )
 
 CACHE_EXPIRY_DAYS = 7
+
+_last_discogs_call_time = 0.0
+_MIN_DISCOGS_DELAY = 1.5
+_discogs_lock = threading.Lock()
 
 
 def _get_db_connection():
@@ -246,30 +250,40 @@ def _get_artist_image_from_discogs(artist_name: str, discogs_key: str, discogs_s
 
 def _discogs_get(path: str, params: Dict[str, Any],
                  key: str, secret: str,
-                 sleep_after_ok: float = 0.25,
-                 tries: int = 5):
+                 sleep_after_ok: float = 1.5,
+                 tries: int = 10):
+    global _last_discogs_call_time
+    
     url = f"{DISCOGS_BASE}{path}"
     params = {**params, "key": key, "secret": secret}
     last_exc = None
     backoff = 1.0
     
     for attempt in range(1, tries + 1):
-        try:
-            r = CLIENT.get(url, params=params)
-            if r.status_code == 429:
+        with _discogs_lock:
+            elapsed_since_last = time.time() - _last_discogs_call_time
+            if elapsed_since_last < _MIN_DISCOGS_DELAY:
+                wait_needed = _MIN_DISCOGS_DELAY - elapsed_since_last
+                print(f"[RATE LIMITER] Global delay: waiting {wait_needed:.2f}s before next Discogs call")
+                time.sleep(wait_needed)
+            
+            try:
+                _last_discogs_call_time = time.time()
+                r = CLIENT.get(url, params=params)
+                if r.status_code == 429:
+                    if attempt < tries:
+                        wait_time = 60.0
+                        print(f"[DISCOGS] ⚠️  RATE LIMIT HIT (429) - sleeping {wait_time}s before retry (attempt {attempt}/{tries})")
+                        time.sleep(wait_time)
+                        continue
+                r.raise_for_status()
+                time.sleep(sleep_after_ok)
+                return r.json()
+            except Exception as e:
+                last_exc = e
                 if attempt < tries:
-                    print(f"[DISCOGS] Rate limit hit (429), retrying in {backoff}s... (attempt {attempt}/{tries})")
                     time.sleep(backoff)
                     backoff = min(backoff * 2.0, 10.0)
-                    continue
-            r.raise_for_status()
-            time.sleep(sleep_after_ok)
-            return r.json()
-        except Exception as e:
-            last_exc = e
-            if attempt < tries:
-                time.sleep(backoff)
-                backoff = min(backoff * 2.0, 10.0)
     
     raise RuntimeError(f"Discogs API failed after {tries} attempts: {last_exc}")
 
@@ -282,7 +296,7 @@ def _search_discogs_master(artist_name: str, album_title: str, key: str, secret:
             "q": query,
             "type": "master",
             "per_page": 5
-        }, key, secret, sleep_after_ok=0.5)
+        }, key, secret, sleep_after_ok=1.5)
         
         results = data.get("results", [])
         if not results:
@@ -307,7 +321,7 @@ def _search_discogs_release(artist_name: str, album_title: str, key: str, secret
             "type": "release",
             "format": "vinyl",
             "per_page": 5
-        }, key, secret, sleep_after_ok=0.5)
+        }, key, secret, sleep_after_ok=1.5)
         
         results = data.get("results", [])
         if not results:
@@ -487,20 +501,30 @@ def get_artist_studio_albums(artist_name: str, discogs_key: str, discogs_secret:
         
         return album
     
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        future_to_album = {executor.submit(fetch_data, album): album for album in albums_with_discogs}
-        for future in as_completed(future_to_album):
-            try:
-                future.result()
-            except Exception:
-                pass
+    for album in albums_with_discogs:
+        try:
+            fetch_data(album)
+        except Exception:
+            pass
     
     rated_albums = [a for a in albums_with_discogs if a.rating is not None]
+    discarded_albums = [a for a in albums_with_discogs if a.rating is None]
     rated_albums.sort(key=lambda a: (a.rating or 0, a.votes or 0), reverse=True)
+    
+    total_found = len(albums_with_discogs)
+    with_rating = len(rated_albums)
+    without_rating = len(discarded_albums)
+    
+    if without_rating > 0:
+        print(f"[STATS] ⚠️  {artist_name}: {without_rating} albums discarded (no rating from Discogs)")
+        for album in discarded_albums:
+            print(f"  - '{album.title}' ({album.year})")
     
     if rated_albums and mbid:
         artist_image = _get_artist_image_from_discogs(artist_name, discogs_key, discogs_secret)
         _save_artist_albums(artist_name, mbid, rated_albums, artist_image)
+    
+    print(f"[DB] ✓ Saved {with_rating} albums for '{artist_name}' to cache (discarded {without_rating})")
     
     return rated_albums[:top_n]
 

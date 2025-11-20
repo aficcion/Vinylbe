@@ -714,6 +714,7 @@ async def import_artists_csv(file: UploadFile = File(...)):
             successful = 0
             cached = 0
             failed = 0
+            failed_artists = []
             
             for i, artist_name in enumerate(artists, 1):
                 try:
@@ -722,7 +723,7 @@ async def import_artists_csv(file: UploadFile = File(...)):
                     response = await http_client.post(
                         "http://localhost:5000/api/recommendations/artist-single",
                         json={"artist_name": artist_name, "top_albums": 10},
-                        timeout=120.0
+                        timeout=180.0
                     )
                     
                     elapsed = time.time() - start_time
@@ -748,22 +749,72 @@ async def import_artists_csv(file: UploadFile = File(...)):
                     
                     elif response.status_code == 404:
                         failed += 1
+                        failed_artists.append(artist_name)
                         yield f"data: {json.dumps({'type': 'progress', 'current': i, 'total': total, 'artist': artist_name, 'status': 'not_found', 'error': 'No albums found'})}\n\n"
                     
                     else:
                         failed += 1
+                        failed_artists.append(artist_name)
                         error_msg = response.text[:100]
                         yield f"data: {json.dumps({'type': 'progress', 'current': i, 'total': total, 'artist': artist_name, 'status': 'error', 'error': error_msg})}\n\n"
                 
                 except asyncio.TimeoutError:
                     failed += 1
+                    failed_artists.append(artist_name)
                     yield f"data: {json.dumps({'type': 'progress', 'current': i, 'total': total, 'artist': artist_name, 'status': 'timeout', 'error': 'Request timeout'})}\n\n"
                 
                 except Exception as e:
                     failed += 1
+                    failed_artists.append(artist_name)
                     yield f"data: {json.dumps({'type': 'progress', 'current': i, 'total': total, 'artist': artist_name, 'status': 'error', 'error': str(e)})}\n\n"
                 
                 await asyncio.sleep(0.1)
+            
+            if failed_artists:
+                yield f"data: {json.dumps({'type': 'retry_start', 'failed_count': len(failed_artists), 'artists': failed_artists})}\n\n"
+                
+                retry_successful = 0
+                retry_failed = 0
+                
+                for i, artist_name in enumerate(failed_artists, 1):
+                    try:
+                        start_time = time.time()
+                        
+                        response = await http_client.post(
+                            "http://localhost:5000/api/recommendations/artist-single",
+                            json={"artist_name": artist_name, "top_albums": 10},
+                            timeout=180.0
+                        )
+                        
+                        elapsed = time.time() - start_time
+                        
+                        if response.status_code == 200:
+                            data = response.json()
+                            total_albums = data.get('total', 0)
+                            top_album = None
+                            rating = None
+                            
+                            if data.get('recommendations'):
+                                top_album = data['recommendations'][0].get('album_name')
+                                rating = data['recommendations'][0].get('rating')
+                            
+                            retry_successful += 1
+                            successful += 1
+                            failed -= 1
+                            
+                            yield f"data: {json.dumps({'type': 'retry_progress', 'current': i, 'total': len(failed_artists), 'artist': artist_name, 'status': 'success', 'albums': total_albums, 'time': round(elapsed, 2), 'top_album': top_album, 'rating': rating})}\n\n"
+                        else:
+                            retry_failed += 1
+                            error_msg = response.text[:100] if hasattr(response, 'text') else 'Unknown error'
+                            yield f"data: {json.dumps({'type': 'retry_progress', 'current': i, 'total': len(failed_artists), 'artist': artist_name, 'status': 'error', 'error': error_msg})}\n\n"
+                    
+                    except Exception as e:
+                        retry_failed += 1
+                        yield f"data: {json.dumps({'type': 'retry_progress', 'current': i, 'total': len(failed_artists), 'artist': artist_name, 'status': 'error', 'error': str(e)})}\n\n"
+                    
+                    await asyncio.sleep(0.1)
+                
+                yield f"data: {json.dumps({'type': 'retry_complete', 'retry_successful': retry_successful, 'retry_failed': retry_failed})}\n\n"
             
             yield f"data: {json.dumps({'type': 'complete', 'successful': successful, 'cached': cached, 'failed': failed, 'total': total})}\n\n"
         
