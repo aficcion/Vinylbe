@@ -265,11 +265,44 @@
             }
         }
 
+        .filter-bar {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            padding: 0.5rem;
+            background: var(--card-bg);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            width: fit-content;
+        }
+
+        .filter-btn {
+            padding: 0.5rem 1.25rem;
+            border: none;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .filter-btn:hover {
+            background: var(--hover-color);
+            color: var(--text-primary);
+        }
+
+        .filter-btn.active {
+            background: var(--primary-color);
+            color: white;
+        }
+
         .albums-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             gap: 1.5rem;
-            margin-top: 2rem;
+            margin-top: 0;
         }
 
         .album-card {
@@ -899,6 +932,19 @@
                 </div>
             </div>
         </div>
+        
+        <div class="filter-bar">
+            <button class="filter-btn active" data-filter="all" onclick="filterRecommendations('all')">
+                Todas
+            </button>
+            <button class="filter-btn" data-filter="spotify" onclick="filterRecommendations('spotify')">
+                Spotify
+            </button>
+            <button class="filter-btn" data-filter="artists" onclick="filterRecommendations('artists')">
+                Artistas
+            </button>
+        </div>
+        
         <div class="albums-grid" id="albums-container">
         </div>
     </div>
