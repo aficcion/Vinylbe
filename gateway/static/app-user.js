@@ -73,14 +73,27 @@ async function handleLastfmCallback() {
     
     if (token && localStorage.getItem('vinilogy_lastfm_auth_pending')) {
         showLoading(true, 'Completando autenticación con Last.fm...');
-        localStorage.removeItem('vinilogy_lastfm_auth_pending');
-        localStorage.setItem('has_lastfm_connected', 'true');
         
-        window.history.replaceState({}, document.title, '/');
-        
-        setTimeout(async () => {
-            await loadAllRecommendations();
-        }, 1000);
+        try {
+            const response = await fetch(`/auth/lastfm/callback?token=${token}`);
+            const data = await response.json();
+            
+            if (data.status === 'ok' && data.username) {
+                localStorage.setItem('lastfm_username', data.username);
+                localStorage.setItem('has_lastfm_connected', 'true');
+                localStorage.removeItem('vinilogy_lastfm_auth_pending');
+                
+                window.history.replaceState({}, document.title, '/');
+                
+                setTimeout(async () => {
+                    await loadAllRecommendations();
+                }, 1000);
+            }
+        } catch (error) {
+            console.error('Error completing Last.fm auth:', error);
+            showLoading(false);
+            alert('Error al completar la autenticación de Last.fm');
+        }
     }
 }
 
@@ -261,25 +274,30 @@ async function loadAllRecommendations() {
         }
         
         if (hasLastfm) {
-            promises.push(
-                fetch('/api/lastfm/recommendations', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ time_range: 'medium_term' })
-                })
-                    .then(res => res.json())
-                    .then(data => {
-                        const albums = data.albums || [];
-                        albums.forEach(album => {
-                            album.source = 'lastfm';
-                        });
-                        return { albums };
+            const lastfmUsername = localStorage.getItem('lastfm_username');
+            if (lastfmUsername) {
+                promises.push(
+                    fetch('/api/lastfm/recommendations', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ time_range: 'medium_term', username: lastfmUsername })
                     })
-                    .catch(err => {
-                        console.error('Last.fm recommendations failed:', err);
-                        return { albums: [] };
-                    })
-            );
+                        .then(res => res.json())
+                        .then(data => {
+                            const albums = data.albums || [];
+                            albums.forEach(album => {
+                                album.source = 'lastfm';
+                            });
+                            return { albums };
+                        })
+                        .catch(err => {
+                            console.error('Last.fm recommendations failed:', err);
+                            return { albums: [] };
+                        })
+                );
+            } else {
+                promises.push(Promise.resolve({ albums: [] }));
+            }
         } else {
             promises.push(Promise.resolve({ albums: [] }));
         }

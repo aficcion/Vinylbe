@@ -575,13 +575,18 @@ async def get_lastfm_recommendations(request: dict):
     
     start_time = time.time()
     time_range = request.get("time_range", "medium_term")
-    log_event("gateway", "INFO", f"Starting Last.fm recommendation flow (time_range={time_range})")
+    username = request.get("username")
+    
+    if not username:
+        raise HTTPException(status_code=400, detail="username is required")
+    
+    log_event("gateway", "INFO", f"Starting Last.fm recommendation flow for {username} (time_range={time_range})")
     
     try:
         log_event("gateway", "INFO", "Step 1: Fetching top tracks from Last.fm")
         tracks_resp = await http_client.post(
             f"{LASTFM_SERVICE_URL}/top-tracks",
-            json={"time_range": time_range}
+            json={"time_range": time_range, "username": username}
         )
         tracks_data = tracks_resp.json()
         all_tracks = tracks_data.get("tracks", [])
@@ -594,7 +599,7 @@ async def get_lastfm_recommendations(request: dict):
         log_event("gateway", "INFO", "Step 2: Fetching top artists from Last.fm")
         artists_resp = await http_client.post(
             f"{LASTFM_SERVICE_URL}/top-artists",
-            json={"time_range": time_range}
+            json={"time_range": time_range, "username": username}
         )
         artists_data = artists_resp.json()
         all_artists = artists_data.get("artists", [])
