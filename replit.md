@@ -10,7 +10,8 @@ I want to prioritize a clear, concise, and professional communication style. For
 **Corrección de Duplicados en Merge y Optimización de Generación Spotify (LATEST):**
 - **Bug 1 corregido**: Duplicados en merge de recomendaciones Spotify + artistas (ej: "Getting Killed" de Geese aparecía 2 veces)
 - **Deduplicación híbrida robusta**: Sistema de múltiples claves que genera `artist::album` (siempre) + `master_id` (cuando existe)
-- **Maneja metadata mixta**: Si una rec tiene master_id y otra no, ambas convergen a la misma clave canónica `artist::album`
+- **Maneja estructuras diferentes**: Spotify usa `album_info.name/artists[0].name`, artistas usa `album_name/artist_name` - ambas convergen a clave canónica
+- **Metadata mixta**: Si una rec tiene master_id y otra no, ambas convergen a la misma clave canónica `artist::album`
 - **Elimina variantes**: Reissues y ediciones variantes del mismo álbum se deduplicán correctamente (usuario ve UN álbum único)
 - **Bug 2 corregido**: Generación Spotify lenta (10-15s cuando antes tomaba 2-3s)
 - **Paralelización optimizada**: Usa `asyncio.gather` para llamadas paralelas (top-tracks + top-artists simultáneos, score-tracks + score-artists simultáneos)

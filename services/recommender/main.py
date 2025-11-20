@@ -196,8 +196,16 @@ async def merge_recommendations(request: MergeRecommendationsRequest):
         """Returns all possible keys for this album to handle metadata variations"""
         keys = []
         
-        album = rec.get("album_name", "").lower().strip()
-        artist = rec.get("artist_name", "").lower().strip()
+        if "album_info" in rec:
+            album_info = rec.get("album_info", {})
+            album = album_info.get("name", "").lower().strip()
+            artists_list = album_info.get("artists", [])
+            artist = artists_list[0].get("name", "") if artists_list else ""
+            artist = artist.lower().strip()
+        else:
+            album = rec.get("album_name", "").lower().strip()
+            artist = rec.get("artist_name", "").lower().strip()
+        
         fallback_key = f"{artist}::{album}"
         keys.append(fallback_key)
         
