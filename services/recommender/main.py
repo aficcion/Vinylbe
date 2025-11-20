@@ -192,30 +192,41 @@ async def merge_recommendations(request: MergeRecommendationsRequest):
     merged: List[dict] = []
     max_len = max(len(spotify_recs), len(artist_recs))
     
-    def get_album_key(rec: dict) -> str:
-        discogs_release = rec.get("discogs_release_id")
-        discogs_master = rec.get("discogs_master_id")
+    def get_album_keys(rec: dict) -> list:
+        """Returns all possible keys for this album to handle metadata variations"""
+        keys = []
         
-        if discogs_release:
-            return f"release::{discogs_release}"
-        elif discogs_master:
-            return f"master::{discogs_master}"
-        else:
-            album = rec.get("album_name", "").lower().strip()
-            artist = rec.get("artist_name", "").lower().strip()
-            return f"fallback::{artist}::{album}"
+        album = rec.get("album_name", "").lower().strip()
+        artist = rec.get("artist_name", "").lower().strip()
+        fallback_key = f"{artist}::{album}"
+        keys.append(fallback_key)
+        
+        discogs_master = rec.get("discogs_master_id")
+        if discogs_master:
+            keys.append(f"master::{discogs_master}")
+        
+        return keys
+    
+    def is_duplicate(rec: dict) -> bool:
+        """Check if album is already seen using any of its keys"""
+        rec_keys = get_album_keys(rec)
+        return any(key in seen_albums for key in rec_keys)
+    
+    def mark_as_seen(rec: dict):
+        """Mark all keys for this album as seen"""
+        rec_keys = get_album_keys(rec)
+        for key in rec_keys:
+            seen_albums.add(key)
     
     for i in range(max_len):
         if i < len(spotify_recs):
-            key = get_album_key(spotify_recs[i])
-            if key not in seen_albums:
-                seen_albums.add(key)
+            if not is_duplicate(spotify_recs[i]):
+                mark_as_seen(spotify_recs[i])
                 merged.append(spotify_recs[i])
         
         if i < len(artist_recs):
-            key = get_album_key(artist_recs[i])
-            if key not in seen_albums:
-                seen_albums.add(key)
+            if not is_duplicate(artist_recs[i]):
+                mark_as_seen(artist_recs[i])
                 merged.append(artist_recs[i])
     
     duplicates_removed = (len(spotify_recs) + len(artist_recs)) - len(merged)
