@@ -193,9 +193,17 @@ async def merge_recommendations(request: MergeRecommendationsRequest):
     max_len = max(len(spotify_recs), len(artist_recs))
     
     def get_album_key(rec: dict) -> str:
-        album = rec.get("album_name", "").lower().strip()
-        artist = rec.get("artist_name", "").lower().strip()
-        return f"{artist}::{album}"
+        discogs_release = rec.get("discogs_release_id")
+        discogs_master = rec.get("discogs_master_id")
+        
+        if discogs_release:
+            return f"release::{discogs_release}"
+        elif discogs_master:
+            return f"master::{discogs_master}"
+        else:
+            album = rec.get("album_name", "").lower().strip()
+            artist = rec.get("artist_name", "").lower().strip()
+            return f"fallback::{artist}::{album}"
     
     for i in range(max_len):
         if i < len(spotify_recs):
