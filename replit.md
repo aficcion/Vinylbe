@@ -7,7 +7,19 @@ This project is a comprehensive vinyl recommendation system that leverages Spoti
 I want to prioritize a clear, concise, and professional communication style. For development, I prefer an iterative approach, focusing on delivering core functionality first and then enhancing it. I value detailed explanations, especially for complex architectural decisions. Please ask for my approval before making any major changes to the system architecture or core functionalities.
 
 ## Recent Changes (November 20, 2025)
-**Persistencia de Artistas y Manejo de Rate Limiting de Discogs (LATEST):**
+**Sistema de Caché PostgreSQL para Artistas y Álbumes (LATEST):**
+- **Base de datos estructurada**: 3 tablas (artists, albums, similar_artists) con FKs, constraints y índices optimizados
+- **Schema robusto**: artists tiene UNIQUE(name), albums tiene UNIQUE(artist_id, title, year), timestamps automáticos
+- **Caché inteligente**: Expiración de 7 días, consulta PostgreSQL ANTES de APIs externas (MusicBrainz/Discogs)
+- **Performance dramática**: Artistas cacheados responden en ~0.2s vs 6-15s desde APIs (30-75x más rápido)
+- **Auto-persistencia**: Cuando se consulta artista nuevo, resultados se guardan automáticamente en BD para futuras consultas
+- **Script de seeding production-ready**: scripts/seed_database.py pobla BD con 20 artistas iniciales (177 álbumes totales)
+- **Manejo robusto de errores**: Retry con exponential backoff para Discogs rate limiting, conexiones individuales por artista
+- **Logging detallado**: Muestra fuente de datos (caché vs API), edad del caché, tiempo de respuesta, errores específicos
+- **Tests confirmados**: Blur nuevo 6.92s → Blur cacheado 0.24s (42x mejora), Radiohead cacheado consistentemente 0.23s
+- **Architect aprobado**: Schema correcto, cache-first logic robusta, seeding script production-ready, error handling completo
+
+**Persistencia de Artistas y Manejo de Rate Limiting de Discogs:**
 - **Persistencia robusta**: Modal de artistas ahora restaura automáticamente artistas previamente seleccionados desde localStorage cuando se reabre
 - **Restauración paralela**: Método `restoreArtists()` usa `Promise.all()` para buscar todos los artistas en Last.fm simultáneamente (en vez de secuencialmente)
 - **Manejo de fallos parciales**: Si algunos artistas no se encuentran en Last.fm, los demás se restauran exitosamente sin bloquear el flujo
