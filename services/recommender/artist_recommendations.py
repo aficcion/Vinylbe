@@ -2,7 +2,10 @@ import os
 import time
 import re
 from typing import List, Dict, Any, Optional, Tuple
+from datetime import datetime, timedelta
 import httpx
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 MB_BASE = "https://musicbrainz.org/ws/2"
@@ -24,9 +27,113 @@ CLIENT = httpx.Client(
     follow_redirects=True,
 )
 
+CACHE_EXPIRY_DAYS = 7
+
+
+def _get_db_connection():
+    """Get PostgreSQL connection"""
+    try:
+        return psycopg2.connect(os.getenv("DATABASE_URL"))
+    except Exception as e:
+        print(f"[DB] Connection failed: {e}")
+        return None
+
+
+def _get_cached_artist_albums(artist_name: str) -> Optional[List[Dict[str, Any]]]:
+    """Get cached artist albums from PostgreSQL"""
+    conn = _get_db_connection()
+    if not conn:
+        return None
+    
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        cursor.execute(
+            "SELECT id, mbid, last_updated FROM artists WHERE name = %s",
+            (artist_name,)
+        )
+        artist = cursor.fetchone()
+        
+        if not artist:
+            return None
+        
+        cache_age = datetime.now() - artist["last_updated"]
+        if cache_age > timedelta(days=CACHE_EXPIRY_DAYS):
+            print(f"[DB] Cache for '{artist_name}' is {cache_age.days} days old (expired)")
+            return None
+        
+        cursor.execute(
+            """SELECT title, year, discogs_master_id, discogs_release_id, 
+                      rating, votes, cover_url
+               FROM albums 
+               WHERE artist_id = %s 
+               ORDER BY rating DESC NULLS LAST, votes DESC NULLS LAST""",
+            (artist["id"],)
+        )
+        albums = cursor.fetchall()
+        
+        if not albums:
+            return None
+        
+        print(f"[DB] ✓ Found {len(albums)} cached albums for '{artist_name}' (age: {cache_age.days}d)")
+        return [dict(album) for album in albums]
+    
+    except Exception as e:
+        print(f"[DB] Error reading cache for '{artist_name}': {e}")
+        return None
+    finally:
+        conn.close()
+
+
+def _save_artist_albums(artist_name: str, mbid: str, albums: List['StudioAlbum'], 
+                        image_url: Optional[str] = None):
+    """Save artist and albums to PostgreSQL"""
+    conn = _get_db_connection()
+    if not conn:
+        print(f"[DB] Cannot save '{artist_name}' - no database connection")
+        return
+    
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        cursor.execute(
+            """INSERT INTO artists (name, mbid, image_url) 
+               VALUES (%s, %s, %s) 
+               ON CONFLICT (name) 
+               DO UPDATE SET mbid = EXCLUDED.mbid, 
+                            image_url = EXCLUDED.image_url,
+                            last_updated = CURRENT_TIMESTAMP
+               RETURNING id""",
+            (artist_name, mbid, image_url)
+        )
+        result = cursor.fetchone()
+        if not result:
+            return
+        artist_id = result["id"]
+        
+        cursor.execute("DELETE FROM albums WHERE artist_id = %s", (artist_id,))
+        
+        for album in albums:
+            cursor.execute(
+                """INSERT INTO albums (artist_id, title, year, discogs_master_id, 
+                                      discogs_release_id, rating, votes, cover_url)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                (artist_id, album.title, album.year, album.discogs_master_id,
+                 album.discogs_release_id, album.rating, album.votes, album.cover_image)
+            )
+        
+        conn.commit()
+        print(f"[DB] ✓ Saved {len(albums)} albums for '{artist_name}' to cache")
+    
+    except Exception as e:
+        conn.rollback()
+        print(f"[DB] Error saving '{artist_name}': {e}")
+    finally:
+        conn.close()
+
 
 class StudioAlbum:
-    def __init__(self, title: str, year: str, discogs_master_id: str,
+    def __init__(self, title: str, year: str, discogs_master_id: Optional[str],
                  artist_name: str, rating: Optional[float] = None,
                  votes: Optional[int] = None, cover_image: Optional[str] = None,
                  discogs_release_id: Optional[str] = None, discogs_type: str = "master"):
@@ -275,6 +382,25 @@ def _discogs_master_data(master_id: str, key: str, secret: str) -> Tuple[Optiona
 
 def get_artist_studio_albums(artist_name: str, discogs_key: str, discogs_secret: str,
                               top_n: int = 3) -> List[StudioAlbum]:
+    cached_albums = _get_cached_artist_albums(artist_name)
+    if cached_albums:
+        result = []
+        for album_data in cached_albums[:top_n]:
+            discogs_type = "master" if album_data.get("discogs_master_id") else "release"
+            album = StudioAlbum(
+                title=album_data["title"],
+                year=album_data["year"],
+                discogs_master_id=album_data.get("discogs_master_id"),
+                discogs_release_id=album_data.get("discogs_release_id"),
+                discogs_type=discogs_type,
+                artist_name=artist_name,
+                rating=album_data.get("rating"),
+                votes=album_data.get("votes"),
+                cover_image=album_data.get("cover_url")
+            )
+            result.append(album)
+        return result
+    
     mbid = _find_artist_mbid(artist_name)
     if not mbid:
         return []
@@ -355,6 +481,9 @@ def get_artist_studio_albums(artist_name: str, discogs_key: str, discogs_secret:
     
     rated_albums = [a for a in albums_with_discogs if a.rating is not None]
     rated_albums.sort(key=lambda a: (a.rating or 0, a.votes or 0), reverse=True)
+    
+    if rated_albums and mbid:
+        _save_artist_albums(artist_name, mbid, rated_albums)
     
     return rated_albums[:top_n]
 
