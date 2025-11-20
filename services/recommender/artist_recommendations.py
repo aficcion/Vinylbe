@@ -228,6 +228,22 @@ def _discogs_master_from_rels(relations: Any) -> str:
     return ""
 
 
+def _get_artist_image_from_discogs(artist_name: str, discogs_key: str, discogs_secret: str) -> Optional[str]:
+    """Get artist image from Discogs search"""
+    try:
+        data = _discogs_get("/database/search", {
+            "q": artist_name,
+            "type": "artist",
+            "per_page": 1
+        }, discogs_key, discogs_secret)
+        results = data.get("results", [])
+        if results:
+            return results[0].get("cover_image")
+    except Exception as e:
+        print(f"[ARTIST IMAGE] Could not get image for {artist_name}: {e}")
+    return None
+
+
 def _discogs_get(path: str, params: Dict[str, Any],
                  key: str, secret: str,
                  sleep_after_ok: float = 0.25,
@@ -483,7 +499,8 @@ def get_artist_studio_albums(artist_name: str, discogs_key: str, discogs_secret:
     rated_albums.sort(key=lambda a: (a.rating or 0, a.votes or 0), reverse=True)
     
     if rated_albums and mbid:
-        _save_artist_albums(artist_name, mbid, rated_albums)
+        artist_image = _get_artist_image_from_discogs(artist_name, discogs_key, discogs_secret)
+        _save_artist_albums(artist_name, mbid, rated_albums, artist_image)
     
     return rated_albums[:top_n]
 
