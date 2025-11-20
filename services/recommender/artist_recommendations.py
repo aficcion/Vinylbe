@@ -123,13 +123,32 @@ def _discogs_master_from_rels(relations: Any) -> str:
 
 def _discogs_get(path: str, params: Dict[str, Any],
                  key: str, secret: str,
-                 sleep_after_ok: float = 0.25):
+                 sleep_after_ok: float = 0.25,
+                 tries: int = 5):
     url = f"{DISCOGS_BASE}{path}"
     params = {**params, "key": key, "secret": secret}
-    r = CLIENT.get(url, params=params)
-    r.raise_for_status()
-    time.sleep(sleep_after_ok)
-    return r.json()
+    last_exc = None
+    backoff = 1.0
+    
+    for attempt in range(1, tries + 1):
+        try:
+            r = CLIENT.get(url, params=params)
+            if r.status_code == 429:
+                if attempt < tries:
+                    print(f"[DISCOGS] Rate limit hit (429), retrying in {backoff}s... (attempt {attempt}/{tries})")
+                    time.sleep(backoff)
+                    backoff = min(backoff * 2.0, 10.0)
+                    continue
+            r.raise_for_status()
+            time.sleep(sleep_after_ok)
+            return r.json()
+        except Exception as e:
+            last_exc = e
+            if attempt < tries:
+                time.sleep(backoff)
+                backoff = min(backoff * 2.0, 10.0)
+    
+    raise RuntimeError(f"Discogs API failed after {tries} attempts: {last_exc}")
 
 
 def _search_discogs_master(artist_name: str, album_title: str, key: str, secret: str) -> Optional[str]:
