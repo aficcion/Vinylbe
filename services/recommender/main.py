@@ -188,17 +188,32 @@ async def merge_recommendations(request: MergeRecommendationsRequest):
     log_event("recommender-service", "INFO", 
               f"Merging {len(spotify_recs)} Spotify + {len(artist_recs)} artist recommendations")
     
+    seen_albums = set()
     merged: List[dict] = []
     max_len = max(len(spotify_recs), len(artist_recs))
     
+    def get_album_key(rec: dict) -> str:
+        album = rec.get("album_name", "").lower().strip()
+        artist = rec.get("artist_name", "").lower().strip()
+        return f"{artist}::{album}"
+    
     for i in range(max_len):
         if i < len(spotify_recs):
-            merged.append(spotify_recs[i])
+            key = get_album_key(spotify_recs[i])
+            if key not in seen_albums:
+                seen_albums.add(key)
+                merged.append(spotify_recs[i])
+        
         if i < len(artist_recs):
-            merged.append(artist_recs[i])
+            key = get_album_key(artist_recs[i])
+            if key not in seen_albums:
+                seen_albums.add(key)
+                merged.append(artist_recs[i])
     
+    duplicates_removed = (len(spotify_recs) + len(artist_recs)) - len(merged)
     elapsed = time.time() - start_time
-    log_event("recommender-service", "INFO", f"Merged into {len(merged)} total recommendations in {elapsed:.2f}s")
+    log_event("recommender-service", "INFO", 
+              f"Merged into {len(merged)} total recommendations ({duplicates_removed} duplicates removed) in {elapsed:.2f}s")
     return {"recommendations": merged, "total": len(merged)}
 
 

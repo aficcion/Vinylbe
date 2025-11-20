@@ -621,24 +621,24 @@ async def get_artist_recommendations(request: dict):
         if spotify_token:
             try:
                 log_event("gateway", "INFO", "Fetching Spotify recommendations")
-                tracks_resp = await http_client.get(f"{SPOTIFY_SERVICE_URL}/top-tracks")
+                
+                tracks_resp, artists_resp = await asyncio.gather(
+                    http_client.get(f"{SPOTIFY_SERVICE_URL}/top-tracks"),
+                    http_client.get(f"{SPOTIFY_SERVICE_URL}/top-artists")
+                )
+                
                 tracks_data = tracks_resp.json()
                 all_tracks = tracks_data.get("tracks", [])
                 
-                artists_resp = await http_client.get(f"{SPOTIFY_SERVICE_URL}/top-artists")
                 artists_data = artists_resp.json()
                 all_artists = artists_data.get("artists", [])
                 
-                scored_tracks_resp = await http_client.post(
-                    f"{RECOMMENDER_SERVICE_URL}/score-tracks",
-                    json=all_tracks
+                scored_tracks_resp, scored_artists_resp = await asyncio.gather(
+                    http_client.post(f"{RECOMMENDER_SERVICE_URL}/score-tracks", json=all_tracks),
+                    http_client.post(f"{RECOMMENDER_SERVICE_URL}/score-artists", json=all_artists)
                 )
-                scored_tracks = scored_tracks_resp.json().get("scored_tracks", [])
                 
-                scored_artists_resp = await http_client.post(
-                    f"{RECOMMENDER_SERVICE_URL}/score-artists",
-                    json=all_artists
-                )
+                scored_tracks = scored_tracks_resp.json().get("scored_tracks", [])
                 scored_artists = scored_artists_resp.json().get("scored_artists", [])
                 
                 albums_resp = await http_client.post(
