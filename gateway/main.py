@@ -550,17 +550,19 @@ async def get_single_artist_recommendations(request: dict):
     
     artist_name = request.get("artist_name")
     top_albums = request.get("top_albums", 3)
+    csv_mode = request.get("csv_mode", False)
     
     if not artist_name:
         raise HTTPException(status_code=400, detail="artist_name is required")
     
     start_time = time.time()
-    log_event("gateway", "INFO", f"Getting recommendations for artist: {artist_name}")
+    mode_label = " (CSV mode)" if csv_mode else ""
+    log_event("gateway", "INFO", f"Getting recommendations for artist: {artist_name}{mode_label}")
     
     try:
         resp = await http_client.post(
             f"{RECOMMENDER_SERVICE_URL}/artist-single-recommendation",
-            json={"artist_name": artist_name, "top_albums": top_albums}
+            json={"artist_name": artist_name, "top_albums": top_albums, "csv_mode": csv_mode}
         )
         resp.raise_for_status()
         result = resp.json()
@@ -722,7 +724,7 @@ async def import_artists_csv(file: UploadFile = File(...)):
                     
                     response = await http_client.post(
                         "http://localhost:5000/api/recommendations/artist-single",
-                        json={"artist_name": artist_name, "top_albums": 10},
+                        json={"artist_name": artist_name, "top_albums": 10, "csv_mode": True},
                         timeout=180.0
                     )
                     
@@ -782,7 +784,7 @@ async def import_artists_csv(file: UploadFile = File(...)):
                         
                         response = await http_client.post(
                             "http://localhost:5000/api/recommendations/artist-single",
-                            json={"artist_name": artist_name, "top_albums": 10},
+                            json={"artist_name": artist_name, "top_albums": 10, "csv_mode": True},
                             timeout=180.0
                         )
                         

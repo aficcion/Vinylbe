@@ -251,7 +251,7 @@ def _get_artist_image_from_discogs(artist_name: str, discogs_key: str, discogs_s
 
 def _discogs_get(path: str, params: Dict[str, Any],
                  key: str, secret: str,
-                 sleep_after_ok: float = 1.2,
+                 sleep_after_ok: float = 0.25,
                  tries: int = 5):
     url = f"{DISCOGS_BASE}{path}"
     params = {**params, "key": key, "secret": secret}
@@ -287,7 +287,7 @@ def _search_discogs_master(artist_name: str, album_title: str, key: str, secret:
             "q": query,
             "type": "master",
             "per_page": 5
-        }, key, secret, sleep_after_ok=1.2)
+        }, key, secret, sleep_after_ok=0.5)
         
         results = data.get("results", [])
         if not results:
@@ -312,7 +312,7 @@ def _search_discogs_release(artist_name: str, album_title: str, key: str, secret
             "type": "release",
             "format": "vinyl",
             "per_page": 5
-        }, key, secret, sleep_after_ok=1.2)
+        }, key, secret, sleep_after_ok=0.5)
         
         results = data.get("results", [])
         if not results:
@@ -402,7 +402,7 @@ def _discogs_master_data(master_id: str, key: str, secret: str) -> Tuple[Optiona
 
 
 def get_artist_studio_albums(artist_name: str, discogs_key: str, discogs_secret: str,
-                              top_n: int = 3) -> List[StudioAlbum]:
+                              top_n: int = 3, csv_mode: bool = False) -> List[StudioAlbum]:
     cached_albums = _get_cached_artist_albums(artist_name)
     if cached_albums:
         result = []
@@ -492,7 +492,11 @@ def get_artist_studio_albums(artist_name: str, discogs_key: str, discogs_secret:
         
         return album
     
-    with ThreadPoolExecutor(max_workers=1) as executor:
+    # CSV mode: ultra-conservative (1 worker, slow)
+    # Normal mode: fast (5 workers, parallel)
+    max_workers = 1 if csv_mode else 5
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_album = {executor.submit(fetch_data, album): album for album in albums_with_discogs}
         for future in as_completed(future_to_album):
             try:

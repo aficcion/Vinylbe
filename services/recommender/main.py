@@ -39,6 +39,7 @@ class MergeRecommendationsRequest(BaseModel):
 class SingleArtistRequest(BaseModel):
     artist_name: str
     top_albums: int = 3
+    csv_mode: bool = False
 
 
 @asynccontextmanager
@@ -262,7 +263,8 @@ async def artist_single_recommendation(request: SingleArtistRequest):
             request.artist_name,
             discogs_key,
             discogs_secret,
-            top_n=request.top_albums
+            top_n=request.top_albums,
+            csv_mode=request.csv_mode
         )
         
         recommendations = []
