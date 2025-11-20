@@ -7,7 +7,19 @@ This project is a comprehensive vinyl recommendation system that leverages Spoti
 I want to prioritize a clear, concise, and professional communication style. For development, I prefer an iterative approach, focusing on delivering core functionality first and then enhancing it. I value detailed explanations, especially for complex architectural decisions. Please ask for my approval before making any major changes to the system architecture or core functionalities.
 
 ## Recent Changes (November 20, 2025)
-**Sistema de Caché PostgreSQL para Artistas y Álbumes (LATEST):**
+**Importación Masiva de Artistas desde CSV y Garantía de Ratings (LATEST):**
+- **Script de importación CSV**: `scripts/import_artists_from_csv.py` permite cargar artistas en bloque desde archivo CSV
+- **Formato simple**: CSV con columna obligatoria `name` (una línea por artista)
+- **Auto-persistencia completa**: Cada artista se consulta en APIs externas, obtiene ratings de Discogs e imagen, y se guarda automáticamente en PostgreSQL
+- **Gestión de errores por artista**: Si un artista falla, el proceso continúa con los demás (no bloquea todo el batch)
+- **Detección de caché**: Script detecta artistas ya cacheados y responde instantáneamente (~0.2s vs ~6s para nuevos)
+- **Actualización de ratings faltantes**: Script `scripts/update_missing_ratings.py` actualiza ratings de álbumes legacy que fueron seeded sin ratings
+- **Garantía de calidad**: Sistema solo persiste álbumes con rating válido, ignorando releases sin datos en Discogs
+- **Test confirmado**: Importación de The Cure (14 álbumes, todos con rating) en 7.34s, consulta posterior en 0.20s desde caché
+- **Estado actual BD**: 21 artistas, 191 álbumes totales, 177 con ratings válidos (12 sin rating son bootlegs/broadcasts sin discogs_master_id)
+- **Modificación crítica**: `get_artist_studio_albums()` ahora obtiene imagen del artista desde Discogs antes de guardar, garantizando metadata completa
+
+**Sistema de Caché PostgreSQL para Artistas y Álbumes:**
 - **Base de datos estructurada**: 3 tablas (artists, albums, similar_artists) con FKs, constraints y índices optimizados
 - **Schema robusto**: artists tiene UNIQUE(name), albums tiene UNIQUE(artist_id, title, year), timestamps automáticos
 - **Caché inteligente**: Expiración de 7 días, consulta PostgreSQL ANTES de APIs externas (MusicBrainz/Discogs)
