@@ -9,13 +9,14 @@ I want to prioritize a clear, concise, and professional communication style. For
 ## Recent Changes (November 20, 2025)
 **Corrección de Duplicados en Merge y Optimización de Generación Spotify (LATEST):**
 - **Bug 1 corregido**: Duplicados en merge de recomendaciones Spotify + artistas (ej: "Getting Killed" de Geese aparecía 2 veces)
-- **Deduplicación robusta**: Implementa jerarquía de claves únicas: `release_id` (prioridad) → `master_id` (fallback) → `artist::album` (último recurso)
-- **Preserva variantes**: Diferentes releases del mismo master (reissues, ediciones variantes) se mantienen correctamente
+- **Deduplicación híbrida robusta**: Sistema de múltiples claves que genera `artist::album` (siempre) + `master_id` (cuando existe)
+- **Maneja metadata mixta**: Si una rec tiene master_id y otra no, ambas convergen a la misma clave canónica `artist::album`
+- **Elimina variantes**: Reissues y ediciones variantes del mismo álbum se deduplicán correctamente (usuario ve UN álbum único)
 - **Bug 2 corregido**: Generación Spotify lenta (10-15s cuando antes tomaba 2-3s)
 - **Paralelización optimizada**: Usa `asyncio.gather` para llamadas paralelas (top-tracks + top-artists simultáneos, score-tracks + score-artists simultáneos)
 - **Mejora de performance**: Reducción de tiempo ~40-60% en generación Spotify (de 5 llamadas secuenciales a 3 rondas con paralelización)
 - **Logging mejorado**: Registra duplicados removidos en merge para debugging
-- **Architect aprobado**: Ambas soluciones validadas como production-ready y robustas ante edge cases
+- **Architect aprobado**: Ambas soluciones validadas como production-ready y robustas ante todos los edge cases
 
 **Corrección de Bug: Promise Tracking para Carga Completa de Recomendaciones:**
 - **Problema corregido**: Bug donde hacer clic en "Continuar" antes de que terminen de cargar artistas causaba que no se mostraran todas las recomendaciones
