@@ -34,6 +34,7 @@ class ArtistRecommendationRequest(BaseModel):
 class MergeRecommendationsRequest(BaseModel):
     spotify_recommendations: List[dict]
     artist_recommendations: List[dict]
+    lastfm_recommendations: List[dict] = []
 
 
 class SingleArtistRequest(BaseModel):
@@ -102,6 +103,40 @@ async def score_artists(artists: List[dict]):
     
     elapsed = time.time() - start_time
     log_event("recommender-service", "INFO", f"Scored {len(scored_artists)} artists in {elapsed:.2f}s")
+    return {"scored_artists": scored_artists, "total": len(scored_artists)}
+
+
+@app.post("/score-lastfm-tracks")
+async def score_lastfm_tracks(tracks: List[dict]):
+    import time
+    start_time = time.time()
+    
+    if not scoring_engine:
+        raise HTTPException(status_code=500, detail="Scoring engine not initialized")
+    
+    log_event("recommender-service", "INFO", f"Scoring {len(tracks)} Last.fm tracks")
+    
+    scored_tracks = scoring_engine.score_lastfm_tracks(tracks)
+    
+    elapsed = time.time() - start_time
+    log_event("recommender-service", "INFO", f"Scored {len(scored_tracks)} Last.fm tracks in {elapsed:.2f}s")
+    return {"scored_tracks": scored_tracks, "total": len(scored_tracks)}
+
+
+@app.post("/score-lastfm-artists")
+async def score_lastfm_artists(artists: List[dict]):
+    import time
+    start_time = time.time()
+    
+    if not scoring_engine:
+        raise HTTPException(status_code=500, detail="Scoring engine not initialized")
+    
+    log_event("recommender-service", "INFO", f"Scoring {len(artists)} Last.fm artists")
+    
+    scored_artists = scoring_engine.score_lastfm_artists(artists)
+    
+    elapsed = time.time() - start_time
+    log_event("recommender-service", "INFO", f"Scored {len(scored_artists)} Last.fm artists in {elapsed:.2f}s")
     return {"scored_artists": scored_artists, "total": len(scored_artists)}
 
 
@@ -185,13 +220,14 @@ async def merge_recommendations(request: MergeRecommendationsRequest):
     
     spotify_recs = request.spotify_recommendations
     artist_recs = request.artist_recommendations
+    lastfm_recs = request.lastfm_recommendations
     
     log_event("recommender-service", "INFO", 
-              f"Merging {len(spotify_recs)} Spotify + {len(artist_recs)} artist recommendations")
+              f"Merging {len(spotify_recs)} Spotify + {len(artist_recs)} artist + {len(lastfm_recs)} Last.fm recommendations")
     
     seen_albums = set()
     merged: List[dict] = []
-    max_len = max(len(spotify_recs), len(artist_recs))
+    max_len = max(len(spotify_recs), len(artist_recs), len(lastfm_recs))
     
     def get_album_keys(rec: dict) -> list:
         """Returns all possible keys for this album to handle metadata variations"""
@@ -233,12 +269,17 @@ async def merge_recommendations(request: MergeRecommendationsRequest):
                 mark_as_seen(spotify_recs[i])
                 merged.append(spotify_recs[i])
         
+        if i < len(lastfm_recs):
+            if not is_duplicate(lastfm_recs[i]):
+                mark_as_seen(lastfm_recs[i])
+                merged.append(lastfm_recs[i])
+        
         if i < len(artist_recs):
             if not is_duplicate(artist_recs[i]):
                 mark_as_seen(artist_recs[i])
                 merged.append(artist_recs[i])
     
-    duplicates_removed = (len(spotify_recs) + len(artist_recs)) - len(merged)
+    duplicates_removed = (len(spotify_recs) + len(artist_recs) + len(lastfm_recs)) - len(merged)
     elapsed = time.time() - start_time
     log_event("recommender-service", "INFO", 
               f"Merged into {len(merged)} total recommendations ({duplicates_removed} duplicates removed) in {elapsed:.2f}s")

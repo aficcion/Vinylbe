@@ -44,3 +44,61 @@ class ScoringEngine:
             scored_artists.append(scored_artist)
         
         return scored_artists
+    
+    def score_lastfm_tracks(self, tracks: List[dict]) -> List[dict]:
+        """
+        Score Last.fm tracks using playcount instead of position
+        Last.fm tracks have: playcount, time_range (mapped from period)
+        """
+        scored_tracks = []
+        
+        if not tracks:
+            return scored_tracks
+        
+        max_playcount = max((int(t.get("playcount", 0)) for t in tracks), default=1)
+        
+        for idx, track in enumerate(tracks):
+            time_range = track.get("time_range", "medium_term")
+            boost = self.time_range_boosts.get(time_range, 1.0)
+            
+            playcount = int(track.get("playcount", 0))
+            playcount_score = (playcount / max_playcount) * 300 if max_playcount > 0 else 0
+            
+            total_score = playcount_score * boost
+            
+            scored_track = {
+                **track,
+                "position": idx,
+                "score": total_score,
+                "playcount": playcount,
+                "source": "lastfm"
+            }
+            scored_tracks.append(scored_track)
+        
+        return scored_tracks
+    
+    def score_lastfm_artists(self, artists: List[dict]) -> List[dict]:
+        """
+        Score Last.fm artists using playcount
+        """
+        scored_artists = []
+        
+        if not artists:
+            return scored_artists
+        
+        max_playcount = max((int(a.get("playcount", 0)) for a in artists), default=1)
+        
+        for idx, artist in enumerate(artists):
+            playcount = int(artist.get("playcount", 0))
+            playcount_score = (playcount / max_playcount) * 300 if max_playcount > 0 else 0
+            
+            scored_artist = {
+                **artist,
+                "position": idx,
+                "score": playcount_score,
+                "playcount": playcount,
+                "source": "lastfm"
+            }
+            scored_artists.append(scored_artist)
+        
+        return scored_artists

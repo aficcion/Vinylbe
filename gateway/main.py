@@ -129,6 +129,44 @@ async def spotify_callback_alias(code: str):
     return await spotify_callback(code)
 
 
+@app.get("/auth/lastfm/login")
+async def lastfm_login():
+    if not http_client:
+        raise HTTPException(status_code=500, detail="HTTP client not initialized")
+    try:
+        resp = await http_client.get(f"{LASTFM_SERVICE_URL}/auth/url")
+        return resp.json()
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Last.fm login failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to contact Last.fm service: {str(e)}")
+
+
+@app.get("/auth/lastfm/callback")
+async def lastfm_callback(token: str):
+    if not http_client:
+        raise HTTPException(status_code=500, detail="HTTP client not initialized")
+    try:
+        resp = await http_client.post(f"{LASTFM_SERVICE_URL}/auth/callback?token={token}")
+        data = resp.json()
+        
+        if data.get("status") == "success":
+            log_event("gateway", "INFO", f"Last.fm authentication successful for user: {data.get('username')}")
+            return {"status": "ok", "username": data.get("username")}
+        else:
+            raise HTTPException(status_code=400, detail="Last.fm authentication failed")
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Last.fm callback failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Callback failed: {str(e)}")
+
+
+@app.get("/lastfm/callback")
+async def lastfm_callback_alias(token: str):
+    """Alias for /auth/lastfm/callback to maintain compatibility with configured redirect URIs"""
+    return await lastfm_callback(token)
+
+
 @app.get("/album-pricing/{artist}/{album}")
 async def get_album_pricing(artist: str, album: str):
     """
@@ -530,6 +568,82 @@ async def search_artists(q: str):
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
+@app.post("/api/lastfm/recommendations")
+async def get_lastfm_recommendations(request: dict):
+    if not http_client:
+        raise HTTPException(status_code=500, detail="HTTP client not initialized")
+    
+    start_time = time.time()
+    time_range = request.get("time_range", "medium_term")
+    log_event("gateway", "INFO", f"Starting Last.fm recommendation flow (time_range={time_range})")
+    
+    try:
+        log_event("gateway", "INFO", "Step 1: Fetching top tracks from Last.fm")
+        tracks_resp = await http_client.post(
+            f"{LASTFM_SERVICE_URL}/top-tracks",
+            json={"time_range": time_range}
+        )
+        tracks_data = tracks_resp.json()
+        all_tracks = tracks_data.get("tracks", [])
+        
+        for track in all_tracks:
+            track["time_range"] = time_range
+        
+        log_event("gateway", "INFO", f"Fetched {len(all_tracks)} Last.fm tracks")
+        
+        log_event("gateway", "INFO", "Step 2: Fetching top artists from Last.fm")
+        artists_resp = await http_client.post(
+            f"{LASTFM_SERVICE_URL}/top-artists",
+            json={"time_range": time_range}
+        )
+        artists_data = artists_resp.json()
+        all_artists = artists_data.get("artists", [])
+        log_event("gateway", "INFO", f"Fetched {len(all_artists)} Last.fm artists")
+        
+        log_event("gateway", "INFO", "Step 3: Scoring Last.fm tracks")
+        scored_tracks_resp = await http_client.post(
+            f"{RECOMMENDER_SERVICE_URL}/score-lastfm-tracks",
+            json=all_tracks
+        )
+        scored_tracks = scored_tracks_resp.json().get("scored_tracks", [])
+        log_event("gateway", "INFO", f"Scored {len(scored_tracks)} Last.fm tracks")
+        
+        log_event("gateway", "INFO", "Step 4: Scoring Last.fm artists")
+        scored_artists_resp = await http_client.post(
+            f"{RECOMMENDER_SERVICE_URL}/score-lastfm-artists",
+            json=all_artists
+        )
+        scored_artists = scored_artists_resp.json().get("scored_artists", [])
+        log_event("gateway", "INFO", f"Scored {len(scored_artists)} Last.fm artists")
+        
+        log_event("gateway", "INFO", "Step 5: Aggregating albums from Last.fm data")
+        albums_resp = await http_client.post(
+            f"{RECOMMENDER_SERVICE_URL}/aggregate-albums",
+            json={"scored_tracks": scored_tracks, "scored_artists": scored_artists}
+        )
+        albums = albums_resp.json().get("albums", [])
+        log_event("gateway", "INFO", f"Generated {len(albums)} album recommendations from Last.fm")
+        
+        end_time = time.time()
+        total_time = end_time - start_time
+        log_event("gateway", "INFO", f"Last.fm recommendation flow complete: {len(albums)} albums in {total_time:.2f}s")
+        
+        return {
+            "albums": albums,
+            "total": len(albums),
+            "total_time_seconds": round(total_time, 2),
+            "stats": {
+                "tracks_analyzed": len(all_tracks),
+                "artists_analyzed": len(all_artists),
+                "albums_found": len(albums)
+            }
+        }
+    
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Last.fm recommendation flow failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Last.fm recommendation failed: {str(e)}")
+
+
 @app.get("/api/recommendations/progress")
 async def get_recommendations_progress():
     if not http_client:
@@ -682,6 +796,37 @@ async def get_artist_recommendations(request: dict):
     except Exception as e:
         log_event("gateway", "ERROR", f"Artist recommendations failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Recommendations failed: {str(e)}")
+
+
+@app.post("/api/recommendations/merge")
+async def merge_recommendations(request: dict):
+    if not http_client:
+        raise HTTPException(status_code=500, detail="HTTP client not initialized")
+    
+    try:
+        spotify_recs = request.get("spotify_recommendations", [])
+        lastfm_recs = request.get("lastfm_recommendations", [])
+        artist_recs = request.get("artist_recommendations", [])
+        
+        log_event("gateway", "INFO", 
+                  f"Merging {len(spotify_recs)} Spotify + {len(lastfm_recs)} Last.fm + {len(artist_recs)} artist recommendations")
+        
+        response = await http_client.post(
+            f"{RECOMMENDER_SERVICE_URL}/merge-recommendations",
+            json={
+                "spotify_recommendations": spotify_recs,
+                "lastfm_recommendations": lastfm_recs,
+                "artist_recommendations": artist_recs
+            }
+        )
+        
+        data = response.json()
+        log_event("gateway", "INFO", f"Merged into {data.get('total', 0)} recommendations")
+        return data
+    
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Merge recommendations failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Merge failed: {str(e)}")
 
 
 @app.post("/api/admin/import-csv")

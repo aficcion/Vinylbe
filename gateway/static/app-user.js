@@ -27,6 +27,22 @@ async function loginSpotify() {
     }
 }
 
+// Last.fm Authentication
+async function loginLastfm() {
+    try {
+        const response = await fetch('/auth/lastfm/login');
+        const data = await response.json();
+        
+        if (data.auth_url) {
+            localStorage.setItem('vinilogy_lastfm_auth_pending', 'true');
+            window.location.href = data.auth_url;
+        }
+    } catch (error) {
+        console.error('Error initiating Last.fm login:', error);
+        alert('Error al conectar con Last.fm. Por favor, intenta de nuevo.');
+    }
+}
+
 // Handle Spotify callback
 async function handleSpotifyCallback() {
     const urlParams = new URLSearchParams(window.location.search);
@@ -35,17 +51,36 @@ async function handleSpotifyCallback() {
     if (auth === 'success') {
         window.history.replaceState({}, document.title, '/');
         localStorage.removeItem('vinilogy_auth_pending');
+        localStorage.setItem('has_spotify_connected', 'true');
         
         const savedArtists = localStorage.getItem('selected_artist_names');
         if (savedArtists) {
             await loadMixedRecommendations(JSON.parse(savedArtists));
         } else {
             showLoading(true);
-            await loadRecommendations();
+            await loadAllRecommendations();
         }
     } else if (auth === 'error') {
         window.history.replaceState({}, document.title, '/');
         alert('Error al autenticar con Spotify. Por favor, intenta de nuevo.');
+    }
+}
+
+// Handle Last.fm callback (handled by backend, check status)
+async function handleLastfmCallback() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    
+    if (token && localStorage.getItem('vinilogy_lastfm_auth_pending')) {
+        showLoading(true, 'Completando autenticación con Last.fm...');
+        localStorage.removeItem('vinilogy_lastfm_auth_pending');
+        localStorage.setItem('has_lastfm_connected', 'true');
+        
+        window.history.replaceState({}, document.title, '/');
+        
+        setTimeout(async () => {
+            await loadAllRecommendations();
+        }, 1000);
     }
 }
 
@@ -178,7 +213,7 @@ function stopProgressMonitoring() {
     }
 }
 
-// Load recommendations (without pricing)
+// Load recommendations (without pricing) - Spotify only
 async function loadRecommendations() {
     showLoading(true);
     
@@ -199,6 +234,98 @@ async function loadRecommendations() {
         console.error('Error loading recommendations:', error);
         showLoading(false);
         alert('Error al cargar recomendaciones. Por favor, intenta de nuevo.');
+    }
+}
+
+// Load all recommendations from Spotify and Last.fm
+async function loadAllRecommendations() {
+    showLoading(true, 'Cargando recomendaciones desde todas las fuentes...');
+    
+    try {
+        const hasSpotify = localStorage.getItem('has_spotify_connected') === 'true';
+        const hasLastfm = localStorage.getItem('has_lastfm_connected') === 'true';
+        
+        const promises = [];
+        
+        if (hasSpotify) {
+            promises.push(
+                fetch('/recommend-vinyl')
+                    .then(res => res.json())
+                    .catch(err => {
+                        console.error('Spotify recommendations failed:', err);
+                        return { albums: [] };
+                    })
+            );
+        } else {
+            promises.push(Promise.resolve({ albums: [] }));
+        }
+        
+        if (hasLastfm) {
+            promises.push(
+                fetch('/api/lastfm/recommendations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ time_range: 'medium_term' })
+                })
+                    .then(res => res.json())
+                    .then(data => {
+                        const albums = data.albums || [];
+                        albums.forEach(album => {
+                            album.source = 'lastfm';
+                        });
+                        return { albums };
+                    })
+                    .catch(err => {
+                        console.error('Last.fm recommendations failed:', err);
+                        return { albums: [] };
+                    })
+            );
+        } else {
+            promises.push(Promise.resolve({ albums: [] }));
+        }
+        
+        const [spotifyData, lastfmData] = await Promise.all(promises);
+        
+        const spotifyAlbums = spotifyData.albums || [];
+        const lastfmAlbums = lastfmData.albums || [];
+        
+        if (spotifyAlbums.length === 0 && lastfmAlbums.length === 0) {
+            showLoading(false);
+            alert('No se encontraron recomendaciones. Por favor, conecta al menos una fuente.');
+            return;
+        }
+        
+        const mergedAlbums = await mergeRecommendationLists(spotifyAlbums, lastfmAlbums);
+        
+        localStorage.setItem('last_recommendations', JSON.stringify(mergedAlbums));
+        localStorage.setItem('last_updated', new Date().toISOString());
+        renderRecommendations(mergedAlbums);
+        
+    } catch (error) {
+        console.error('Error loading all recommendations:', error);
+        showLoading(false);
+        alert('Error al cargar recomendaciones. Por favor, intenta de nuevo.');
+    }
+}
+
+// Merge recommendation lists from multiple sources with deduplication
+async function mergeRecommendationLists(spotifyAlbums, lastfmAlbums, artistAlbums = []) {
+    try {
+        const response = await fetch('/api/recommendations/merge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                spotify_recommendations: spotifyAlbums,
+                lastfm_recommendations: lastfmAlbums,
+                artist_recommendations: artistAlbums
+            })
+        });
+        
+        const data = await response.json();
+        return data.recommendations || [];
+    } catch (error) {
+        console.error('Error merging recommendations:', error);
+        return [...spotifyAlbums, ...lastfmAlbums, ...artistAlbums];
     }
 }
 
@@ -252,11 +379,17 @@ function renderRecommendations(recommendations) {
     document.getElementById('recommendations-view').classList.add('active');
     
     const hasArtistBased = recommendations.some(rec => rec.source === 'artist_based');
-    const hasSpotifyBased = recommendations.some(rec => rec.source !== 'artist_based');
+    const hasLastfmBased = recommendations.some(rec => rec.source === 'lastfm');
+    const hasSpotifyBased = recommendations.some(rec => !rec.source || (rec.source !== 'artist_based' && rec.source !== 'lastfm'));
     const hasSpotifyConnected = localStorage.getItem('has_spotify_connected') === 'true';
     
     const spotifyBtn = document.getElementById('spotify-connect-btn');
     const artistSearchBtn = document.getElementById('artist-search-header-btn');
+    const lastfmFilterBtn = document.querySelector('.filter-btn[data-filter="lastfm"]');
+    
+    if (lastfmFilterBtn) {
+        lastfmFilterBtn.style.display = hasLastfmBased ? 'inline-block' : 'none';
+    }
     
     if (hasArtistBased && !hasSpotifyBased && !hasSpotifyConnected) {
         spotifyBtn.style.display = 'inline-flex';
@@ -317,7 +450,9 @@ function filterRecommendations(filter) {
     if (filter === 'all') {
         filtered = allRecommendations;
     } else if (filter === 'spotify') {
-        filtered = allRecommendations.filter(rec => !rec.source || rec.source !== 'artist_based');
+        filtered = allRecommendations.filter(rec => !rec.source || (rec.source !== 'artist_based' && rec.source !== 'lastfm'));
+    } else if (filter === 'lastfm') {
+        filtered = allRecommendations.filter(rec => rec.source === 'lastfm');
     } else if (filter === 'artists') {
         filtered = allRecommendations.filter(rec => rec.source === 'artist_based');
     }
@@ -670,5 +805,6 @@ function formatArtistRecommendations(recommendations) {
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     handleSpotifyCallback();
+    handleLastfmCallback();
     checkCachedRecommendations();
 });

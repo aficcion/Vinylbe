@@ -1,228 +1,135 @@
 import os
-import time
-from typing import List, Optional, Tuple
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+from fastapi import FastAPI, HTTPException
+from contextlib import asynccontextmanager
+from typing import List
 from pydantic import BaseModel
-import httpx
-import logging
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-app = FastAPI(title="Last.fm Service")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-LASTFM_API_KEY = os.getenv("LASTFM_API_KEY")
-LASTFM_BASE_URL = "https://ws.audioscrobbler.com/2.0/"
-DISCOGS_BASE = "https://api.discogs.com"
-DISCOGS_KEY = os.getenv("DISCOGS_KEY")
-DISCOGS_SECRET = os.getenv("DISCOGS_SECRET")
-
-HEADERS = {
-    "User-Agent": "Vinilogy/1.0 (+https://vinilogy.com; contact@vinilogy.com)"
-}
+from libs.shared.utils import log_event
+from .auth import LastFMAuthManager
+from .lastfm_client import LastFMClient
 
 
-class ArtistSearchResult(BaseModel):
-    name: str
-    image_url: Optional[str] = None
-    genres: List[str] = []
-    mbid: Optional[str] = None
+auth_manager = LastFMAuthManager()
+lastfm_client = None
 
 
-class SearchResponse(BaseModel):
-    artists: List[ArtistSearchResult]
-    search_time_ms: float
+class TimeRangeRequest(BaseModel):
+    time_range: str = "medium_term"
 
 
-class LastFMClient:
-    def __init__(self, api_key: str, base_url: str = LASTFM_BASE_URL,
-                 discogs_key: Optional[str] = None, discogs_secret: Optional[str] = None):
-        self.api_key = api_key
-        self.base_url = base_url
-        self.discogs_key = discogs_key
-        self.discogs_secret = discogs_secret
-
-    def _clean_artist_name(self, name: str) -> str:
-        """Remove Discogs ID numbers like (11), (3) from artist names"""
-        import re
-        # Remove patterns like (11), (3), (2) at the end of the name
-        cleaned = re.sub(r'\s*\(\d+\)\s*$', '', name)
-        return cleaned.strip()
-
-    def search_artists_discogs(self, query: str, limit: int = 5) -> Tuple[List[ArtistSearchResult], float]:
-        start_time = time.time()
-
-        if not self.discogs_key or not self.discogs_secret:
-            return [], 0.0
-
-        try:
-            params = {
-                "q": query.strip(),
-                "type": "artist",
-                "key": self.discogs_key,
-                "secret": self.discogs_secret,
-                "per_page": str(limit * 2),  # Fetch more to account for duplicates
-            }
-
-            with httpx.Client(timeout=10.0) as client:
-                resp = client.get(f"{DISCOGS_BASE}/database/search", params=params)
-            resp.raise_for_status()
-            data = resp.json()
-
-            results = data.get("results", [])
-
-            # Track seen names and their first image
-            seen_names = {}
-            artists: List[ArtistSearchResult] = []
-
-            for res in results:
-                raw_title = res.get("title", "")
-                thumb = res.get("thumb")
-
-                # Clean the name
-                clean_name = self._clean_artist_name(raw_title)
-
-                # Skip if we've already seen this clean name
-                if clean_name in seen_names:
-                    continue
-
-                # Mark as seen and store the first image
-                seen_names[clean_name] = thumb
-
-                # Get genres using the CLEAN name
-                genres = self._get_genres_from_lastfm(clean_name)
-
-                artist = ArtistSearchResult(
-                    name=clean_name,
-                    image_url=thumb,
-                    genres=genres,
-                    mbid=None
-                )
-                artists.append(artist)
-
-                # Stop when we have enough unique artists
-                if len(artists) >= limit:
-                    break
-
-            elapsed = time.time() - start_time
-            return artists, elapsed
-
-        except Exception as e:
-            logger.warning(f"Discogs search failed: {e}, falling back to Last.fm")
-
-        return self._search_artists_lastfm(query.strip(), limit=limit, start_time=start_time)
-
-    def _get_genres_from_lastfm(self, artist_name: str) -> List[str]:
-        try:
-            params = {
-                "method": "artist.getTopTags",
-                "artist": artist_name,
-                "api_key": self.api_key,
-                "format": "json",
-            }
-
-            with httpx.Client(timeout=5.0) as client:
-                resp = client.get(self.base_url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
-
-            tags = data.get("toptags", {}).get("tag", [])
-            if isinstance(tags, dict):
-                tags = [tags]
-
-            genres = []
-            for tag in tags[:3]:
-                tag_name = tag.get("name", "")
-                if tag_name:
-                    genres.append(tag_name)
-
-            return genres
-        except Exception as e:
-            logger.debug(f"Failed to get genres for {artist_name}: {e}")
-            return []
-
-    def _search_artists_lastfm(self, query: str, limit: int, start_time: float) -> Tuple[List[ArtistSearchResult], float]:
-        try:
-            params = {
-                "method": "artist.search",
-                "artist": query,
-                "api_key": self.api_key,
-                "format": "json",
-                "limit": str(limit),
-            }
-
-            with httpx.Client(timeout=10.0) as client:
-                resp = client.get(self.base_url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
-
-            results_node = data.get("results", {}).get("artistmatches", {}).get("artist", [])
-            if isinstance(results_node, dict):
-                results_node = [results_node]
-
-            artists: List[ArtistSearchResult] = []
-            for res in results_node[:limit]:
-                name = res.get("name")
-                if not name:
-                    continue
-
-                mbid = res.get("mbid")
-                if mbid == "":
-                    mbid = None
-
-                genres = self._get_genres_from_lastfm(name)
-
-                artist = ArtistSearchResult(
-                    name=name,
-                    image_url=None,
-                    genres=genres,
-                    mbid=mbid
-                )
-                artists.append(artist)
-
-            elapsed = time.time() - start_time
-            return artists, elapsed
-
-        except Exception as e:
-            logger.error(f"Last.fm search failed: {e}")
-            elapsed = time.time() - start_time
-            return [], elapsed
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    log_event("lastfm-service", "INFO", "Starting Last.fm service")
+    yield
+    log_event("lastfm-service", "INFO", "Shutting down Last.fm service")
 
 
-client = LastFMClient(
-    api_key=LASTFM_API_KEY or "",
-    discogs_key=DISCOGS_KEY,
-    discogs_secret=DISCOGS_SECRET
-)
+app = FastAPI(lifespan=lifespan)
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "lastfm"}
+    return {"status": "healthy", "service": "lastfm"}
 
 
-@app.get("/search", response_model=SearchResponse)
-async def search_artists(q: str = Query(..., min_length=4, description="Search query (min 4 characters)")):
-    if not LASTFM_API_KEY:
-        raise HTTPException(status_code=500, detail="LASTFM_API_KEY not configured")
+@app.get("/auth/url")
+async def get_auth_url():
+    try:
+        token = await auth_manager.get_token()
+        if not token:
+            raise HTTPException(status_code=500, detail="Failed to get Last.fm token")
+        
+        auth_url = auth_manager.get_auth_url(token)
+        log_event("lastfm-service", "INFO", f"Generated auth URL with token: {token[:10]}...")
+        
+        return {
+            "auth_url": auth_url,
+            "token": token
+        }
+    except Exception as e:
+        log_event("lastfm-service", "ERROR", f"Failed to generate auth URL: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    artists, search_time = client.search_artists_discogs(q, limit=5)
 
-    return SearchResponse(
-        artists=artists,
-        search_time_ms=search_time * 1000
-    )
+@app.post("/auth/callback")
+async def auth_callback(token: str):
+    try:
+        success = await auth_manager.get_session(token)
+        if not success:
+            raise HTTPException(status_code=400, detail="Failed to get session")
+        
+        username = auth_manager.get_username()
+        log_event("lastfm-service", "INFO", f"User authenticated: {username}")
+        
+        global lastfm_client
+        api_key = os.getenv("LASTFM_API_KEY")
+        lastfm_client = LastFMClient(api_key, username)
+        await lastfm_client.start()
+        
+        return {
+            "status": "success",
+            "username": username
+        }
+    except Exception as e:
+        log_event("lastfm-service", "ERROR", f"Auth callback failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=3004)
+@app.get("/auth/status")
+async def auth_status():
+    return {
+        "authenticated": auth_manager.is_authenticated(),
+        "username": auth_manager.get_username()
+    }
+
+
+@app.post("/top-tracks")
+async def get_top_tracks(request: TimeRangeRequest):
+    if not auth_manager.is_authenticated():
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    if not lastfm_client:
+        raise HTTPException(status_code=500, detail="Client not initialized")
+    
+    period_map = {
+        "short_term": "7day",
+        "medium_term": "3month",
+        "long_term": "12month"
+    }
+    
+    period = period_map.get(request.time_range, "3month")
+    
+    try:
+        tracks = await lastfm_client.get_top_tracks(period=period)
+        log_event("lastfm-service", "INFO", f"Retrieved {len(tracks)} top tracks for period={period}")
+        return {"tracks": tracks, "total": len(tracks)}
+    except Exception as e:
+        log_event("lastfm-service", "ERROR", f"Failed to get top tracks: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/top-artists")
+async def get_top_artists(request: TimeRangeRequest):
+    if not auth_manager.is_authenticated():
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    if not lastfm_client:
+        raise HTTPException(status_code=500, detail="Client not initialized")
+    
+    period_map = {
+        "short_term": "7day",
+        "medium_term": "3month",
+        "long_term": "12month"
+    }
+    
+    period = period_map.get(request.time_range, "3month")
+    
+    try:
+        artists = await lastfm_client.get_top_artists(period=period)
+        log_event("lastfm-service", "INFO", f"Retrieved {len(artists)} top artists for period={period}")
+        return {"artists": artists, "total": len(artists)}
+    except Exception as e:
+        log_event("lastfm-service", "ERROR", f"Failed to get top artists: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
