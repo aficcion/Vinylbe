@@ -7,7 +7,19 @@ This project is a comprehensive vinyl recommendation system that leverages Spoti
 I want to prioritize a clear, concise, and professional communication style. For development, I prefer an iterative approach, focusing on delivering core functionality first and then enhancing it. I value detailed explanations, especially for complex architectural decisions. Please ask for my approval before making any major changes to the system architecture or core functionalities.
 
 ## Recent Changes (November 20, 2025)
-**Filtro de Recomendaciones Minimalista (LATEST):**
+**Persistencia de Artistas y Manejo de Rate Limiting de Discogs (LATEST):**
+- **Persistencia robusta**: Modal de artistas ahora restaura automáticamente artistas previamente seleccionados desde localStorage cuando se reabre
+- **Restauración paralela**: Método `restoreArtists()` usa `Promise.all()` para buscar todos los artistas en Last.fm simultáneamente (en vez de secuencialmente)
+- **Manejo de fallos parciales**: Si algunos artistas no se encuentran en Last.fm, los demás se restauran exitosamente sin bloquear el flujo
+- **Logging detallado**: Registra cuántos artistas se restauraron exitosamente vs cuántos fallaron, con razones específicas para debugging
+- **Background recommendations**: Cada artista restaurado activa automáticamente la generación de recomendaciones en background (cachea desde sesión anterior si están disponibles)
+- **Discogs rate limiting**: Implementado retry con exponential backoff (5 intentos, 1s→2s→4s→8s→10s) para manejar errores 429 de Discogs
+- **Retry inteligente**: Maneja tanto errores 429 (rate limiting) como otros errores transitorios (500, 502, 503, network failures)
+- **Mensajes claros**: Logging específico para debugging de rate limiting, muestra qué intentos se están haciendo y cuándo se agota el backoff
+- **UX mejorada**: Usuario puede volver a abrir el modal y ver todos sus artistas previamente seleccionados, con sus recomendaciones cacheadas
+- **Architect aprobado**: Ambas implementaciones validadas como production-ready y robustas ante todos los edge cases
+
+**Filtro de Recomendaciones Minimalista:**
 - **Feature nueva**: Filtro visual arriba del grid de recomendaciones que permite al usuario ver solo Spotify, solo artistas, o todas
 - **Diseño minimalista**: Pills/tabs compactos con background card, border radius, hover states y estado activo con color primary
 - **Variables CSS**: Agregadas --hover-color (light/dark themes) para consistencia visual
