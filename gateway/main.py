@@ -692,23 +692,22 @@ async def import_artists_csv(file: UploadFile = File(...)):
     if not file.filename or not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="File must be a CSV")
     
+    # Read file content before creating the stream
+    content = await file.read()
+    csv_text = content.decode('utf-8')
+    csv_reader = csv.DictReader(csv_text.splitlines())
+    
+    if not csv_reader.fieldnames or 'name' not in csv_reader.fieldnames:
+        raise HTTPException(status_code=400, detail="CSV must have a 'name' column")
+    
+    artists = [row['name'].strip() for row in csv_reader if row.get('name', '').strip()]
+    
+    if not artists:
+        raise HTTPException(status_code=400, detail="No artists found in CSV")
+    
     async def event_stream() -> AsyncGenerator[str, None]:
         """Server-Sent Events stream for progress updates"""
         try:
-            content = await file.read()
-            csv_text = content.decode('utf-8')
-            csv_reader = csv.DictReader(csv_text.splitlines())
-            
-            if not csv_reader.fieldnames or 'name' not in csv_reader.fieldnames:
-                yield f"data: {json.dumps({'type': 'error', 'message': 'CSV must have a name column'})}\n\n"
-                return
-            
-            artists = [row['name'].strip() for row in csv_reader if row.get('name', '').strip()]
-            
-            if not artists:
-                yield f"data: {json.dumps({'type': 'error', 'message': 'No artists found in CSV'})}\n\n"
-                return
-            
             total = len(artists)
             yield f"data: {json.dumps({'type': 'start', 'total': total})}\n\n"
             
@@ -721,7 +720,7 @@ async def import_artists_csv(file: UploadFile = File(...)):
                     start_time = time.time()
                     
                     response = await http_client.post(
-                        f"{RECOMMENDER_SERVICE_URL}/recommendations/artist-single",
+                        "http://localhost:5000/api/recommendations/artist-single",
                         json={"artist_name": artist_name, "top_albums": 10},
                         timeout=120.0
                     )
