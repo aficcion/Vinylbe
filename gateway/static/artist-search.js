@@ -14,6 +14,7 @@ class ArtistSearch {
         this.searchTimeout = null;
         this.recommendationsCache = {};
         this.loadingArtists = new Set();
+        this.pendingPromises = new Map();
         
         this.render();
         this.attachEventListeners();
@@ -95,9 +96,9 @@ class ArtistSearch {
         }
         
         if (continueBtn) {
-            continueBtn.addEventListener('click', () => {
+            continueBtn.addEventListener('click', async () => {
                 if (this.options.onContinue && this.isValidSelection()) {
-                    this.options.onContinue(this.selectedArtists);
+                    await this.options.onContinue(this.selectedArtists);
                 }
             });
         }
@@ -189,51 +190,56 @@ class ArtistSearch {
             this.loadingArtists.add(artist.name);
             this.updateUI();
             
-            try {
-                const response = await fetch('/api/recommendations/artist-single', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ artist_name: artist.name, top_albums: 3 })
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    const recs = data.recommendations || [];
-                    if (recs.length > 0) {
-                        this.recommendationsCache[artist.name] = {
-                            status: 'success',
-                            recommendations: recs,
-                            timestamp: Date.now()
-                        };
-                        console.log(`✓ Cached ${recs.length} recommendations for ${artist.name}`);
+            const fetchPromise = (async () => {
+                try {
+                    const response = await fetch('/api/recommendations/artist-single', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ artist_name: artist.name, top_albums: 3 })
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        const recs = data.recommendations || [];
+                        if (recs.length > 0) {
+                            this.recommendationsCache[artist.name] = {
+                                status: 'success',
+                                recommendations: recs,
+                                timestamp: Date.now()
+                            };
+                            console.log(`✓ Cached ${recs.length} recommendations for ${artist.name}`);
+                        } else {
+                            this.recommendationsCache[artist.name] = {
+                                status: 'error',
+                                error: 'No albums found',
+                                timestamp: Date.now()
+                            };
+                            console.warn(`⚠ No albums found for ${artist.name}`);
+                        }
                     } else {
+                        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
                         this.recommendationsCache[artist.name] = {
                             status: 'error',
-                            error: 'No albums found',
+                            error: errorData.detail || `HTTP ${response.status}`,
                             timestamp: Date.now()
                         };
-                        console.warn(`⚠ No albums found for ${artist.name}`);
+                        console.error(`✗ Failed to get recommendations for ${artist.name}: ${errorData.detail}`);
                     }
-                } else {
-                    const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+                } catch (error) {
                     this.recommendationsCache[artist.name] = {
                         status: 'error',
-                        error: errorData.detail || `HTTP ${response.status}`,
+                        error: error.message || 'Network error',
                         timestamp: Date.now()
                     };
-                    console.error(`✗ Failed to get recommendations for ${artist.name}: ${errorData.detail}`);
+                    console.error(`✗ Error fetching recommendations for ${artist.name}:`, error);
+                } finally {
+                    this.loadingArtists.delete(artist.name);
+                    this.pendingPromises.delete(artist.name);
+                    this.updateUI();
                 }
-            } catch (error) {
-                this.recommendationsCache[artist.name] = {
-                    status: 'error',
-                    error: error.message || 'Network error',
-                    timestamp: Date.now()
-                };
-                console.error(`✗ Error fetching recommendations for ${artist.name}:`, error);
-            } finally {
-                this.loadingArtists.delete(artist.name);
-                this.updateUI();
-            }
+            })();
+            
+            this.pendingPromises.set(artist.name, fetchPromise);
         }
     }
     
@@ -241,8 +247,20 @@ class ArtistSearch {
         this.selectedArtists = this.selectedArtists.filter(a => a.name !== artistName);
         delete this.recommendationsCache[artistName];
         this.loadingArtists.delete(artistName);
+        this.pendingPromises.delete(artistName);
         console.log(`✗ Removed ${artistName} and its cached recommendations`);
         this.updateUI();
+    }
+    
+    async waitForAllPendingRecommendations() {
+        if (this.pendingPromises.size === 0) {
+            return;
+        }
+        
+        console.log(`⏳ Waiting for ${this.pendingPromises.size} pending recommendations to complete...`);
+        const allPromises = Array.from(this.pendingPromises.values());
+        await Promise.allSettled(allPromises);
+        console.log('✓ All pending recommendations completed');
     }
     
     updateUI() {
@@ -300,7 +318,15 @@ class ArtistSearch {
     updateContinueButton() {
         const continueBtn = document.getElementById('continue-btn');
         if (continueBtn) {
-            continueBtn.disabled = !this.isValidSelection();
+            const isValid = this.isValidSelection();
+            const isLoading = this.loadingArtists.size > 0;
+            continueBtn.disabled = !isValid || isLoading;
+            
+            if (isLoading && isValid) {
+                continueBtn.textContent = `Cargando ${this.loadingArtists.size}...`;
+            } else {
+                continueBtn.textContent = 'Continuar';
+            }
         }
     }
     

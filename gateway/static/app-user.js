@@ -511,15 +511,29 @@ function closeArtistSearch() {
 }
 
 async function handleArtistSelection(selectedArtists) {
-    closeArtistSearch();
-    
     const artistNames = selectedArtists.map(a => a.name);
     localStorage.setItem('selected_artist_names', JSON.stringify(artistNames));
     
     const hasSpotifyConnected = localStorage.getItem('has_spotify_connected') === 'true';
     
-    const cachedRecs = artistSearchComponent ? artistSearchComponent.getCachedRecommendations() : [];
-    const loadingStatus = artistSearchComponent ? artistSearchComponent.getLoadingStatus() : { hasAllSuccessful: false };
+    if (!artistSearchComponent) {
+        console.error('Artist search component not available');
+        closeArtistSearch();
+        alert('Error: el componente de búsqueda no está disponible. Por favor, intenta de nuevo.');
+        return;
+    }
+    
+    if (artistSearchComponent.pendingPromises.size > 0) {
+        console.log(`⏳ Waiting for ${artistSearchComponent.pendingPromises.size} pending recommendations...`);
+        showLoading(true, 'Finalizando recomendaciones...');
+        await artistSearchComponent.waitForAllPendingRecommendations();
+        showLoading(false);
+    }
+    
+    closeArtistSearch();
+    
+    const loadingStatus = artistSearchComponent.getLoadingStatus();
+    const cachedRecs = artistSearchComponent.getCachedRecommendations();
     
     console.log(`Cache status: ${cachedRecs.length} recommendations, ${loadingStatus.success}/${loadingStatus.total} successful, ${loadingStatus.error} errors, all successful: ${loadingStatus.hasAllSuccessful}`);
     
