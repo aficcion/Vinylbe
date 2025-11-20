@@ -7,6 +7,16 @@ This project is a comprehensive vinyl recommendation system that leverages Spoti
 I want to prioritize a clear, concise, and professional communication style. For development, I prefer an iterative approach, focusing on delivering core functionality first and then enhancing it. I value detailed explanations, especially for complex architectural decisions. Please ask for my approval before making any major changes to the system architecture or core functionalities.
 
 ## Recent Changes (November 20, 2025)
+**Filtro de Recomendaciones Minimalista (LATEST):**
+- **Feature nueva**: Filtro visual arriba del grid de recomendaciones que permite al usuario ver solo Spotify, solo artistas, o todas
+- **Diseño minimalista**: Pills/tabs compactos con background card, border radius, hover states y estado activo con color primary
+- **Variables CSS**: Agregadas --hover-color (light/dark themes) para consistencia visual
+- **Preservación de estado**: El filtro mantiene la selección del usuario al recargar recomendaciones (no resetea a "Todas")
+- **Lógica robusta**: Filtrado basado en campo source ('artist_based' vs undefined/otros), con fallback para casos edge
+- **UX pulida**: Transiciones suaves, estado activo visible, coherente con diseño existente
+- **Architect aprobado**: Implementación production-ready, preserva estado, maneja edge cases correctamente
+
+
 **Corrección de Duplicados en Merge y Optimización de Generación Spotify (LATEST):**
 - **Bug 1 corregido**: Duplicados en merge de recomendaciones Spotify + artistas (ej: "Getting Killed" de Geese aparecía 2 veces)
 - **Deduplicación híbrida robusta**: Sistema de múltiples claves que genera `artist::album` (siempre) + `master_id` (cuando existe)
