@@ -240,8 +240,14 @@ async function loadMixedRecommendations(artistNames) {
     }
 }
 
+let allRecommendations = [];
+let currentFilter = 'all';
+
 // Render recommendations grid (fast, no pricing calls)
 function renderRecommendations(recommendations) {
+    allRecommendations = recommendations;
+    currentFilter = 'all';
+    
     document.getElementById('landing-view').style.display = 'none';
     document.getElementById('album-detail-view').style.display = 'none';
     document.getElementById('recommendations-view').classList.add('active');
@@ -263,6 +269,12 @@ function renderRecommendations(recommendations) {
     
     artistSearchBtn.style.display = 'inline-flex';
     
+    displayFilteredRecommendations(recommendations);
+    
+    showLoading(false);
+}
+
+function displayFilteredRecommendations(recommendations) {
     const container = document.getElementById('albums-container');
     container.innerHTML = '';
     
@@ -270,8 +282,26 @@ function renderRecommendations(recommendations) {
         const card = createAlbumCard(rec);
         container.appendChild(card);
     });
+}
+
+function filterRecommendations(filter) {
+    currentFilter = filter;
     
-    showLoading(false);
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    document.querySelector(`.filter-btn[data-filter="${filter}"]`).classList.add('active');
+    
+    let filtered;
+    if (filter === 'all') {
+        filtered = allRecommendations;
+    } else if (filter === 'spotify') {
+        filtered = allRecommendations.filter(rec => rec.source !== 'artist_based');
+    } else if (filter === 'artists') {
+        filtered = allRecommendations.filter(rec => rec.source === 'artist_based');
+    }
+    
+    displayFilteredRecommendations(filtered);
 }
 
 // Create album card (no pricing data yet)
