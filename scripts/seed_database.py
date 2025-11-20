@@ -193,65 +193,71 @@ def get_artist_image_from_discogs(artist_name: str) -> Optional[str]:
     return None
 
 
-def seed_artist(conn, artist_name: str):
+def seed_artist(artist_name: str):
     """Seed a single artist with all albums"""
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    conn = get_db_connection()
     
-    print(f"\n{'='*60}")
-    print(f"Processing: {artist_name}")
-    print(f"{'='*60}")
-    
-    cursor.execute("SELECT id FROM artists WHERE name = %s", (artist_name,))
-    existing = cursor.fetchone()
-    if existing:
-        print(f"✓ Artist '{artist_name}' already exists in database (ID: {existing['id']}), skipping...")
-        return
-    
-    print(f"[1/4] Finding MusicBrainz ID...")
-    mbid = find_artist_mbid(artist_name)
-    if not mbid:
-        print(f"✗ Could not find MBID for {artist_name}, skipping...")
-        return
-    print(f"✓ Found MBID: {mbid}")
-    
-    print(f"[2/4] Fetching discography...")
-    albums = fetch_studio_albums(mbid, artist_name)
-    print(f"✓ Found {len(albums)} studio albums")
-    
-    print(f"[3/4] Getting artist image...")
-    image_url = get_artist_image_from_discogs(artist_name)
-    if image_url:
-        print(f"✓ Got artist image")
-    
-    print(f"[4/4] Saving to database...")
-    cursor.execute(
-        "INSERT INTO artists (name, mbid, image_url) VALUES (%s, %s, %s) RETURNING id",
-        (artist_name, mbid, image_url)
-    )
-    artist_id = cursor.fetchone()["id"]
-    print(f"✓ Artist saved (ID: {artist_id})")
-    
-    albums_saved = 0
-    for i, album in enumerate(albums, 1):
-        print(f"  [{i}/{len(albums)}] Processing: {album['title']} ({album['year']})")
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         
-        rating, votes, cover_url = None, None, None
-        if album["discogs_master_id"]:
-            rating, votes, cover_url = get_discogs_master_data(album["discogs_master_id"])
-            if rating:
-                print(f"    ✓ Rating: {rating:.1f}/5 ({votes} votes)")
+        print(f"\n{'='*60}")
+        print(f"Processing: {artist_name}")
+        print(f"{'='*60}")
         
+        cursor.execute("SELECT id FROM artists WHERE name = %s", (artist_name,))
+        existing = cursor.fetchone()
+        if existing:
+            print(f"✓ Artist '{artist_name}' already exists in database (ID: {existing['id']}), skipping...")
+            return
+        
+        print(f"[1/4] Finding MusicBrainz ID...")
+        mbid = find_artist_mbid(artist_name)
+        if not mbid:
+            print(f"✗ Could not find MBID for {artist_name}, skipping...")
+            return
+        print(f"✓ Found MBID: {mbid}")
+        
+        print(f"[2/4] Fetching discography...")
+        albums = fetch_studio_albums(mbid, artist_name)
+        print(f"✓ Found {len(albums)} studio albums")
+        
+        print(f"[3/4] Getting artist image...")
+        image_url = get_artist_image_from_discogs(artist_name)
+        if image_url:
+            print(f"✓ Got artist image")
+        
+        print(f"[4/4] Saving to database...")
         cursor.execute(
-            """INSERT INTO albums (artist_id, title, year, discogs_master_id, rating, votes, cover_url) 
-               VALUES (%s, %s, %s, %s, %s, %s, %s)
-               ON CONFLICT (artist_id, title, year) DO NOTHING""",
-            (artist_id, album["title"], album["year"], album["discogs_master_id"], rating, votes, cover_url)
+            "INSERT INTO artists (name, mbid, image_url) VALUES (%s, %s, %s) RETURNING id",
+            (artist_name, mbid, image_url)
         )
-        albums_saved += 1
+        artist_id = cursor.fetchone()["id"]
+        print(f"✓ Artist saved (ID: {artist_id})")
+        
+        albums_saved = 0
+        for i, album in enumerate(albums, 1):
+            print(f"  [{i}/{len(albums)}] Processing: {album['title']} ({album['year']})")
+            
+            rating, votes, cover_url = None, None, None
+            if album["discogs_master_id"]:
+                rating, votes, cover_url = get_discogs_master_data(album["discogs_master_id"])
+                if rating:
+                    print(f"    ✓ Rating: {rating:.1f}/5 ({votes} votes)")
+            
+            cursor.execute(
+                """INSERT INTO albums (artist_id, title, year, discogs_master_id, rating, votes, cover_url) 
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (artist_id, title, year) DO NOTHING""",
+                (artist_id, album["title"], album["year"], album["discogs_master_id"], rating, votes, cover_url)
+            )
+            albums_saved += 1
+        
+        conn.commit()
+        print(f"✓ Saved {albums_saved} albums for {artist_name}")
+        print(f"{'='*60}\n")
     
-    conn.commit()
-    print(f"✓ Saved {albums_saved} albums for {artist_name}")
-    print(f"{'='*60}\n")
+    finally:
+        conn.close()
 
 
 def main():
@@ -270,21 +276,17 @@ def main():
     print(f"📋 Loaded {len(artist_names)} artists to seed")
     print(f"⏱️  Estimated time: ~{len(artist_names) * 2} minutes (with rate limiting)\n")
     
-    conn = get_db_connection()
-    
     successful = 0
     failed = 0
     
     for i, artist_name in enumerate(artist_names, 1):
         print(f"[{i}/{len(artist_names)}] ", end="")
         try:
-            seed_artist(conn, artist_name)
+            seed_artist(artist_name)
             successful += 1
         except Exception as e:
             print(f"✗ FAILED to seed {artist_name}: {e}")
             failed += 1
-    
-    conn.close()
     
     print("\n" + "="*60)
     print("SEEDING COMPLETE")
