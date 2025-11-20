@@ -33,14 +33,59 @@ async function loginLastfm() {
         const response = await fetch('/auth/lastfm/login');
         const data = await response.json();
         
-        if (data.auth_url) {
+        if (data.auth_url && data.token) {
             localStorage.setItem('vinilogy_lastfm_auth_pending', 'true');
-            window.location.href = data.auth_url;
+            localStorage.setItem('vinilogy_lastfm_token', data.token);
+            window.open(data.auth_url, '_blank', 'width=800,height=600');
+            
+            showLoading(true, 'Esperando autorización de Last.fm...');
+            checkLastfmAuthCompletion(data.token);
         }
     } catch (error) {
         console.error('Error initiating Last.fm login:', error);
         alert('Error al conectar con Last.fm. Por favor, intenta de nuevo.');
     }
+}
+
+async function checkLastfmAuthCompletion(token) {
+    let attempts = 0;
+    const maxAttempts = 60;
+    
+    const intervalId = setInterval(async () => {
+        attempts++;
+        
+        if (attempts > maxAttempts) {
+            clearInterval(intervalId);
+            showLoading(false);
+            localStorage.removeItem('vinilogy_lastfm_auth_pending');
+            localStorage.removeItem('vinilogy_lastfm_token');
+            alert('Tiempo de espera agotado. Por favor, intenta de nuevo.');
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/auth/lastfm/callback?token=${token}`);
+            
+            if (response.ok) {
+                const data = await response.json();
+                
+                if (data.status === 'ok' && data.username) {
+                    clearInterval(intervalId);
+                    localStorage.setItem('lastfm_username', data.username);
+                    localStorage.setItem('has_lastfm_connected', 'true');
+                    localStorage.removeItem('vinilogy_lastfm_auth_pending');
+                    localStorage.removeItem('vinilogy_lastfm_token');
+                    
+                    showLoading(true, 'Last.fm conectado! Cargando recomendaciones...');
+                    setTimeout(async () => {
+                        await loadAllRecommendations();
+                    }, 1000);
+                }
+            }
+        } catch (error) {
+            console.log('Esperando autorización...', attempts);
+        }
+    }, 2000);
 }
 
 // Handle Spotify callback

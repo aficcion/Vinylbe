@@ -135,7 +135,9 @@ async def lastfm_login():
         raise HTTPException(status_code=500, detail="HTTP client not initialized")
     try:
         resp = await http_client.get(f"{LASTFM_SERVICE_URL}/auth/url")
-        return resp.json()
+        data = resp.json()
+        log_event("gateway", "INFO", f"Generated Last.fm auth URL with token: {data.get('token', '')[:10]}...")
+        return data
     except Exception as e:
         log_event("gateway", "ERROR", f"Last.fm login failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to contact Last.fm service: {str(e)}")
