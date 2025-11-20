@@ -233,14 +233,15 @@ def _discogs_master_from_rels(relations: Any) -> str:
     return ""
 
 
-def _get_artist_image_from_discogs(artist_name: str, discogs_key: str, discogs_secret: str) -> Optional[str]:
+def _get_artist_image_from_discogs(artist_name: str, discogs_key: str, discogs_secret: str, csv_mode: bool = False) -> Optional[str]:
     """Get artist image from Discogs search"""
     try:
+        sleep_time = 1.0 if csv_mode else 0.25
         data = _discogs_get("/database/search", {
             "q": artist_name,
             "type": "artist",
             "per_page": 1
-        }, discogs_key, discogs_secret)
+        }, discogs_key, discogs_secret, sleep_after_ok=sleep_time)
         results = data.get("results", [])
         if results:
             return results[0].get("cover_image")
@@ -279,15 +280,16 @@ def _discogs_get(path: str, params: Dict[str, Any],
     raise RuntimeError(f"Discogs API failed after {tries} attempts: {last_exc}")
 
 
-def _search_discogs_master(artist_name: str, album_title: str, key: str, secret: str) -> Optional[str]:
+def _search_discogs_master(artist_name: str, album_title: str, key: str, secret: str, csv_mode: bool = False) -> Optional[str]:
     """Fallback: Search Discogs for master_id by artist + album title"""
     try:
         query = f"{artist_name} {album_title}"
+        sleep_time = 1.0 if csv_mode else 0.25
         data = _discogs_get("/database/search", {
             "q": query,
             "type": "master",
             "per_page": 5
-        }, key, secret, sleep_after_ok=0.5)
+        }, key, secret, sleep_after_ok=sleep_time)
         
         results = data.get("results", [])
         if not results:
@@ -303,16 +305,17 @@ def _search_discogs_master(artist_name: str, album_title: str, key: str, secret:
         return None
 
 
-def _search_discogs_release(artist_name: str, album_title: str, key: str, secret: str) -> Optional[str]:
+def _search_discogs_release(artist_name: str, album_title: str, key: str, secret: str, csv_mode: bool = False) -> Optional[str]:
     """Second fallback: Search Discogs for release_id by artist + album title"""
     try:
         query = f"{artist_name} {album_title}"
+        sleep_time = 1.0 if csv_mode else 0.25
         data = _discogs_get("/database/search", {
             "q": query,
             "type": "release",
             "format": "vinyl",
             "per_page": 5
-        }, key, secret, sleep_after_ok=0.5)
+        }, key, secret, sleep_after_ok=sleep_time)
         
         results = data.get("results", [])
         if not results:
@@ -328,13 +331,14 @@ def _search_discogs_release(artist_name: str, album_title: str, key: str, secret
         return None
 
 
-def _discogs_release_data(release_id: str, key: str, secret: str) -> Tuple[Optional[float], Optional[int], Optional[str]]:
+def _discogs_release_data(release_id: str, key: str, secret: str, csv_mode: bool = False) -> Tuple[Optional[float], Optional[int], Optional[str]]:
     """Get rating and cover from a Discogs release (not master)"""
     if not release_id:
         return None, None, None
     
     try:
-        rel = _discogs_get(f"/releases/{release_id}", {}, key, secret)
+        sleep_time = 1.0 if csv_mode else 0.25
+        rel = _discogs_get(f"/releases/{release_id}", {}, key, secret, sleep_after_ok=sleep_time)
         rr = (rel.get("community") or {}).get("rating") or {}
         
         cover_image = None
@@ -355,12 +359,13 @@ def _discogs_release_data(release_id: str, key: str, secret: str) -> Tuple[Optio
         return None, None, None
 
 
-def _discogs_master_data(master_id: str, key: str, secret: str) -> Tuple[Optional[float], Optional[int], Optional[str]]:
+def _discogs_master_data(master_id: str, key: str, secret: str, csv_mode: bool = False) -> Tuple[Optional[float], Optional[int], Optional[str]]:
     if not master_id:
         return None, None, None
 
     try:
-        data = _discogs_get(f"/masters/{master_id}", {}, key, secret)
+        sleep_time = 1.0 if csv_mode else 0.25
+        data = _discogs_get(f"/masters/{master_id}", {}, key, secret, sleep_after_ok=sleep_time)
         r = (data.get("community") or {}).get("rating") or {}
         
         cover_image = None
@@ -380,7 +385,7 @@ def _discogs_master_data(master_id: str, key: str, secret: str) -> Tuple[Optiona
             return None, None, cover_image
 
         print(f"[RATING] Master {master_id}: No master rating, checking main_release {main_rel}")
-        rel = _discogs_get(f"/releases/{main_rel}", {}, key, secret)
+        rel = _discogs_get(f"/releases/{main_rel}", {}, key, secret, sleep_after_ok=sleep_time)
         rr = (rel.get("community") or {}).get("rating") or {}
         
         if not cover_image:
@@ -458,13 +463,13 @@ def get_artist_studio_albums(artist_name: str, discogs_key: str, discogs_secret:
             albums_without_discogs.append(album)
     
     for album in albums_without_discogs:
-        master_id = _search_discogs_master(artist_name, album.title, discogs_key, discogs_secret)
+        master_id = _search_discogs_master(artist_name, album.title, discogs_key, discogs_secret, csv_mode)
         if master_id:
             album.discogs_master_id = master_id
             album.discogs_type = "master"
             albums_with_discogs.append(album)
         else:
-            release_id = _search_discogs_release(artist_name, album.title, discogs_key, discogs_secret)
+            release_id = _search_discogs_release(artist_name, album.title, discogs_key, discogs_secret, csv_mode)
             if release_id:
                 album.discogs_release_id = release_id
                 album.discogs_type = "release"
@@ -474,9 +479,9 @@ def get_artist_studio_albums(artist_name: str, discogs_key: str, discogs_secret:
         print(f"[ALBUM] Fetching rating for '{album.title}' ({album.year}) by {album.artist_name}")
         
         if album.discogs_type == "master" and album.discogs_master_id:
-            rating, votes, cover_image = _discogs_master_data(album.discogs_master_id, discogs_key, discogs_secret)
+            rating, votes, cover_image = _discogs_master_data(album.discogs_master_id, discogs_key, discogs_secret, csv_mode)
         elif album.discogs_type == "release" and album.discogs_release_id:
-            rating, votes, cover_image = _discogs_release_data(album.discogs_release_id, discogs_key, discogs_secret)
+            rating, votes, cover_image = _discogs_release_data(album.discogs_release_id, discogs_key, discogs_secret, csv_mode)
         else:
             print(f"[ALBUM] '{album.title}': No Discogs ID available")
             rating, votes, cover_image = None, None, None
@@ -518,7 +523,7 @@ def get_artist_studio_albums(artist_name: str, discogs_key: str, discogs_secret:
             print(f"  - '{album.title}' ({album.year})")
     
     if rated_albums and mbid:
-        artist_image = _get_artist_image_from_discogs(artist_name, discogs_key, discogs_secret)
+        artist_image = _get_artist_image_from_discogs(artist_name, discogs_key, discogs_secret, csv_mode)
         _save_artist_albums(artist_name, mbid, rated_albums, artist_image)
     
     print(f"[DB] ✓ Saved {with_rating} albums for '{artist_name}' to cache (discarded {without_rating})")
