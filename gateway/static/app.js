@@ -378,6 +378,149 @@ function displayResults(albums, stats, totalTime) {
     }
 }
 
+// CSV Import Functions
+function uploadCSV() {
+    const fileInput = document.getElementById('csv-file');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        alert('Por favor selecciona un archivo CSV');
+        return;
+    }
+    
+    const uploadBtn = document.getElementById('upload-btn');
+    const importSummary = document.getElementById('import-summary');
+    const importLogContainer = document.getElementById('import-log-container');
+    const importLog = document.getElementById('import-log');
+    
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = '⏳ Importando...';
+    uploadBtn.classList.add('opacity-50', 'cursor-not-allowed');
+    
+    importSummary.classList.remove('hidden');
+    importLogContainer.classList.remove('hidden');
+    importLog.innerHTML = '';
+    
+    let totalCount = 0;
+    let successCount = 0;
+    let cachedCount = 0;
+    let failedCount = 0;
+    let currentCount = 0;
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    fetch('/api/admin/import-csv', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        
+        function processStream() {
+            return reader.read().then(({ done, value }) => {
+                if (done) {
+                    uploadBtn.disabled = false;
+                    uploadBtn.textContent = '✅ Completado';
+                    uploadBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    setTimeout(() => {
+                        uploadBtn.textContent = '📤 Importar';
+                    }, 3000);
+                    return;
+                }
+                
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+                
+                for (const line of lines) {
+                    if (!line.trim() || !line.startsWith('data: ')) continue;
+                    
+                    const jsonStr = line.substring(6);
+                    try {
+                        const data = JSON.parse(jsonStr);
+                        
+                        if (data.type === 'start') {
+                            totalCount = data.total;
+                            document.getElementById('total-count').textContent = totalCount;
+                        }
+                        
+                        else if (data.type === 'progress') {
+                            currentCount = data.current;
+                            const percent = Math.round((currentCount / totalCount) * 100);
+                            document.getElementById('progress-bar').style.width = percent + '%';
+                            document.getElementById('progress-text').textContent = `${currentCount} / ${totalCount}`;
+                            
+                            if (data.status === 'success') {
+                                successCount++;
+                                document.getElementById('success-count').textContent = successCount;
+                            } else if (data.status === 'cached') {
+                                cachedCount++;
+                                document.getElementById('cached-count').textContent = cachedCount;
+                            } else {
+                                failedCount++;
+                                document.getElementById('failed-count').textContent = failedCount;
+                            }
+                            
+                            const statusBadge = getStatusBadge(data.status);
+                            const row = `
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-4 py-2 text-sm text-gray-500">${data.current}</td>
+                                    <td class="px-4 py-2 text-sm font-medium">${data.artist}</td>
+                                    <td class="px-4 py-2">${statusBadge}</td>
+                                    <td class="px-4 py-2 text-sm">${data.albums || '-'}</td>
+                                    <td class="px-4 py-2 text-sm text-gray-600">${data.top_album || '-'}</td>
+                                    <td class="px-4 py-2 text-sm">${data.rating ? `⭐ ${data.rating}/5` : '-'}</td>
+                                    <td class="px-4 py-2 text-sm text-gray-500">${data.time ? data.time + 's' : '-'}</td>
+                                </tr>
+                            `;
+                            importLog.insertAdjacentHTML('beforeend', row);
+                            
+                            const logTable = importLogContainer.querySelector('.overflow-y-auto');
+                            logTable.scrollTop = logTable.scrollHeight;
+                        }
+                        
+                        else if (data.type === 'complete') {
+                            console.log('Import complete:', data);
+                        }
+                        
+                        else if (data.type === 'error') {
+                            alert('Error: ' + data.message);
+                            uploadBtn.disabled = false;
+                            uploadBtn.textContent = '📤 Importar';
+                            uploadBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse SSE data:', e);
+                    }
+                }
+                
+                return processStream();
+            });
+        }
+        
+        return processStream();
+    })
+    .catch(error => {
+        console.error('Import failed:', error);
+        alert('Error durante la importación: ' + error.message);
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = '📤 Importar';
+        uploadBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+    });
+}
+
+function getStatusBadge(status) {
+    const badges = {
+        'success': '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">✓ Nuevo</span>',
+        'cached': '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">⚡ Caché</span>',
+        'not_found': '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">⚠ Sin álbumes</span>',
+        'timeout': '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">⏱ Timeout</span>',
+        'error': '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">✗ Error</span>'
+    };
+    return badges[status] || badges.error;
+}
+
 // Initialize
 checkServiceHealth();
 setInterval(checkServiceHealth, 10000);

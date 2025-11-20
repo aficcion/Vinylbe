@@ -1,7 +1,7 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from contextlib import asynccontextmanager
 import os
 import sys
@@ -9,6 +9,9 @@ from pathlib import Path
 import httpx
 import asyncio
 import time
+import csv
+import json
+from typing import AsyncGenerator
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -677,3 +680,95 @@ async def get_artist_recommendations(request: dict):
     except Exception as e:
         log_event("gateway", "ERROR", f"Artist recommendations failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Recommendations failed: {str(e)}")
+
+
+@app.post("/api/admin/import-csv")
+async def import_artists_csv(file: UploadFile = File(...)):
+    """Import artists from CSV file with real-time progress updates via SSE"""
+    
+    if not http_client:
+        raise HTTPException(status_code=500, detail="HTTP client not initialized")
+    
+    if not file.filename or not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="File must be a CSV")
+    
+    async def event_stream() -> AsyncGenerator[str, None]:
+        """Server-Sent Events stream for progress updates"""
+        try:
+            content = await file.read()
+            csv_text = content.decode('utf-8')
+            csv_reader = csv.DictReader(csv_text.splitlines())
+            
+            if not csv_reader.fieldnames or 'name' not in csv_reader.fieldnames:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'CSV must have a name column'})}\n\n"
+                return
+            
+            artists = [row['name'].strip() for row in csv_reader if row.get('name', '').strip()]
+            
+            if not artists:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'No artists found in CSV'})}\n\n"
+                return
+            
+            total = len(artists)
+            yield f"data: {json.dumps({'type': 'start', 'total': total})}\n\n"
+            
+            successful = 0
+            cached = 0
+            failed = 0
+            
+            for i, artist_name in enumerate(artists, 1):
+                try:
+                    start_time = time.time()
+                    
+                    response = await http_client.post(
+                        f"{RECOMMENDER_SERVICE_URL}/recommendations/artist-single",
+                        json={"artist_name": artist_name, "top_albums": 10},
+                        timeout=120.0
+                    )
+                    
+                    elapsed = time.time() - start_time
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        total_albums = data.get('total', 0)
+                        top_album = None
+                        rating = None
+                        
+                        if data.get('recommendations'):
+                            top_album = data['recommendations'][0].get('album_name')
+                            rating = data['recommendations'][0].get('rating')
+                        
+                        if elapsed < 1.0:
+                            cached += 1
+                            status = 'cached'
+                        else:
+                            successful += 1
+                            status = 'success'
+                        
+                        yield f"data: {json.dumps({'type': 'progress', 'current': i, 'total': total, 'artist': artist_name, 'status': status, 'albums': total_albums, 'time': round(elapsed, 2), 'top_album': top_album, 'rating': rating})}\n\n"
+                    
+                    elif response.status_code == 404:
+                        failed += 1
+                        yield f"data: {json.dumps({'type': 'progress', 'current': i, 'total': total, 'artist': artist_name, 'status': 'not_found', 'error': 'No albums found'})}\n\n"
+                    
+                    else:
+                        failed += 1
+                        error_msg = response.text[:100]
+                        yield f"data: {json.dumps({'type': 'progress', 'current': i, 'total': total, 'artist': artist_name, 'status': 'error', 'error': error_msg})}\n\n"
+                
+                except asyncio.TimeoutError:
+                    failed += 1
+                    yield f"data: {json.dumps({'type': 'progress', 'current': i, 'total': total, 'artist': artist_name, 'status': 'timeout', 'error': 'Request timeout'})}\n\n"
+                
+                except Exception as e:
+                    failed += 1
+                    yield f"data: {json.dumps({'type': 'progress', 'current': i, 'total': total, 'artist': artist_name, 'status': 'error', 'error': str(e)})}\n\n"
+                
+                await asyncio.sleep(0.1)
+            
+            yield f"data: {json.dumps({'type': 'complete', 'successful': successful, 'cached': cached, 'failed': failed, 'total': total})}\n\n"
+        
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+    
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
