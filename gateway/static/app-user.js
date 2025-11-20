@@ -268,10 +268,16 @@ function renderRecommendations(recommendations) {
     
     artistSearchBtn.style.display = 'inline-flex';
     
-    document.querySelectorAll('.filter-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    document.querySelector(`.filter-btn[data-filter="${currentFilter}"]`).classList.add('active');
+    const filterButtons = document.querySelectorAll('.filter-btn');
+    if (filterButtons.length > 0) {
+        filterButtons.forEach(btn => {
+            btn.classList.remove('active');
+        });
+        const activeBtn = document.querySelector(`.filter-btn[data-filter="${currentFilter}"]`);
+        if (activeBtn) {
+            activeBtn.classList.add('active');
+        }
+    }
     
     let filtered;
     if (currentFilter === 'all') {
@@ -547,6 +553,17 @@ function openArtistSearch() {
             maxArtists: 10,
             onContinue: handleArtistSelection
         });
+        
+        const savedArtistNames = localStorage.getItem('selected_artist_names');
+        if (savedArtistNames) {
+            try {
+                const artistNames = JSON.parse(savedArtistNames);
+                console.log(`✓ Restoring ${artistNames.length} previously selected artists:`, artistNames);
+                artistSearchComponent.restoreArtists(artistNames);
+            } catch (e) {
+                console.error('Error restoring artists:', e);
+            }
+        }
     }
 }
 

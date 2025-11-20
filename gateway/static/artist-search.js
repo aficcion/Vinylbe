@@ -350,6 +350,32 @@ class ArtistSearch {
         this.updateUI();
     }
     
+    async restoreArtists(artistNames) {
+        console.log(`🔄 Restoring ${artistNames.length} artists:`, artistNames);
+        
+        for (const name of artistNames) {
+            try {
+                const response = await fetch(`/api/lastfm/artist/search?query=${encodeURIComponent(name)}&limit=1`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.artists && data.artists.length > 0) {
+                        const artist = data.artists[0];
+                        console.log(`✓ Restored artist: ${artist.name}`);
+                        await this.addArtist(artist);
+                    } else {
+                        console.warn(`⚠ Could not find artist ${name} in Last.fm`);
+                    }
+                } else {
+                    console.error(`✗ Failed to search for ${name}`);
+                }
+            } catch (error) {
+                console.error(`✗ Error restoring artist ${name}:`, error);
+            }
+        }
+        
+        console.log(`✓ Restored ${this.selectedArtists.length} artists successfully`);
+    }
+    
     getCachedRecommendations() {
         const allRecommendations = [];
         for (const artistName of this.selectedArtists.map(a => a.name)) {
