@@ -353,7 +353,7 @@ class ArtistSearch {
     async restoreArtists(artistNames) {
         console.log(`🔄 Restoring ${artistNames.length} artists:`, artistNames);
         
-        for (const name of artistNames) {
+        const fetchAndAddArtist = async (name) => {
             try {
                 const response = await fetch(`/api/lastfm/artist/search?query=${encodeURIComponent(name)}&limit=1`);
                 if (response.ok) {
@@ -362,18 +362,29 @@ class ArtistSearch {
                         const artist = data.artists[0];
                         console.log(`✓ Restored artist: ${artist.name}`);
                         await this.addArtist(artist);
+                        return { success: true, name };
                     } else {
                         console.warn(`⚠ Could not find artist ${name} in Last.fm`);
+                        return { success: false, name, reason: 'Not found' };
                     }
                 } else {
-                    console.error(`✗ Failed to search for ${name}`);
+                    console.error(`✗ Failed to search for ${name} (HTTP ${response.status})`);
+                    return { success: false, name, reason: `HTTP ${response.status}` };
                 }
             } catch (error) {
                 console.error(`✗ Error restoring artist ${name}:`, error);
+                return { success: false, name, reason: error.message };
             }
-        }
+        };
         
-        console.log(`✓ Restored ${this.selectedArtists.length} artists successfully`);
+        const results = await Promise.all(artistNames.map(fetchAndAddArtist));
+        const successful = results.filter(r => r.success).length;
+        const failed = results.filter(r => !r.success);
+        
+        console.log(`✓ Restored ${successful}/${artistNames.length} artists successfully`);
+        if (failed.length > 0) {
+            console.warn(`⚠ Failed to restore ${failed.length} artists:`, failed);
+        }
     }
     
     getCachedRecommendations() {
