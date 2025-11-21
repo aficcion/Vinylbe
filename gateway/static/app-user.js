@@ -34,12 +34,23 @@ async function loginLastfm() {
         const data = await response.json();
         
         if (data.auth_url && data.token) {
-            localStorage.setItem('vinilogy_lastfm_auth_pending', 'true');
             localStorage.setItem('vinilogy_lastfm_token', data.token);
-            window.open(data.auth_url, '_blank', 'width=800,height=600');
             
-            showLoading(true, 'Esperando autorización de Last.fm...');
-            checkLastfmAuthCompletion(data.token);
+            const popupWindow = window.open(data.auth_url, 'Last.fm Auth', 'width=800,height=600');
+            
+            const confirmBtn = document.createElement('button');
+            confirmBtn.textContent = 'Ya autoricé en Last.fm';
+            confirmBtn.className = 'lastfm-confirm-btn';
+            confirmBtn.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10000;padding:15px 30px;background:#d51007;color:white;border:none;border-radius:8px;font-size:16px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.3)';
+            confirmBtn.onclick = async () => {
+                document.body.removeChild(confirmBtn);
+                if (popupWindow && !popupWindow.closed) {
+                    popupWindow.close();
+                }
+                await completeLastfmAuth(data.token);
+            };
+            
+            document.body.appendChild(confirmBtn);
         }
     } catch (error) {
         console.error('Error initiating Last.fm login:', error);
@@ -47,45 +58,31 @@ async function loginLastfm() {
     }
 }
 
-async function checkLastfmAuthCompletion(token) {
-    let attempts = 0;
-    const maxAttempts = 60;
+async function completeLastfmAuth(token) {
+    showLoading(true, 'Completando autenticación con Last.fm...');
     
-    const intervalId = setInterval(async () => {
-        attempts++;
+    try {
+        const response = await fetch(`/auth/lastfm/callback?token=${token}`);
+        const data = await response.json();
         
-        if (attempts > maxAttempts) {
-            clearInterval(intervalId);
-            showLoading(false);
-            localStorage.removeItem('vinilogy_lastfm_auth_pending');
+        if (response.ok && data.status === 'ok' && data.username) {
+            localStorage.setItem('lastfm_username', data.username);
+            localStorage.setItem('has_lastfm_connected', 'true');
             localStorage.removeItem('vinilogy_lastfm_token');
-            alert('Tiempo de espera agotado. Por favor, intenta de nuevo.');
-            return;
-        }
-        
-        try {
-            const response = await fetch(`/auth/lastfm/callback?token=${token}`);
             
-            if (response.ok) {
-                const data = await response.json();
-                
-                if (data.status === 'ok' && data.username) {
-                    clearInterval(intervalId);
-                    localStorage.setItem('lastfm_username', data.username);
-                    localStorage.setItem('has_lastfm_connected', 'true');
-                    localStorage.removeItem('vinilogy_lastfm_auth_pending');
-                    localStorage.removeItem('vinilogy_lastfm_token');
-                    
-                    showLoading(true, 'Last.fm conectado! Cargando recomendaciones...');
-                    setTimeout(async () => {
-                        await loadAllRecommendations();
-                    }, 1000);
-                }
-            }
-        } catch (error) {
-            console.log('Esperando autorización...', attempts);
+            showLoading(true, 'Last.fm conectado! Cargando recomendaciones...');
+            setTimeout(async () => {
+                await loadAllRecommendations();
+            }, 1000);
+        } else {
+            showLoading(false);
+            alert('Error: Por favor, asegúrate de haber autorizado la aplicación en Last.fm.');
         }
-    }, 2000);
+    } catch (error) {
+        showLoading(false);
+        console.error('Error completing Last.fm auth:', error);
+        alert('Error al completar la autenticación. Por favor, intenta de nuevo.');
+    }
 }
 
 // Handle Spotify callback
