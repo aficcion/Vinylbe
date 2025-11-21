@@ -626,10 +626,10 @@ async def get_lastfm_recommendations(request: dict):
             
             try:
                 artist_recs_resp = await http_client.post(
-                    f"{RECOMMENDER_SERVICE_URL}/recommendations/single-artist",
+                    f"{RECOMMENDER_SERVICE_URL}/artist-single-recommendation",
                     json={"artist_name": artist_name, "top_albums": 2}
                 )
-                artist_recs = artist_recs_resp.json().get("albums", [])
+                artist_recs = artist_recs_resp.json().get("recommendations", [])
                 
                 for rec in artist_recs:
                     rec["lastfm_score"] = artist.get("score", 0)
