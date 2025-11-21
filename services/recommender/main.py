@@ -116,29 +116,6 @@ async def lastfm_recommendations(artists: List[dict]):
                 })
         else:
             cache_misses += 1
-            try:
-                discogs_key = os.getenv("DISCOGS_CONSUMER_KEY")
-                discogs_secret = os.getenv("DISCOGS_CONSUMER_SECRET")
-                fresh_albums = artist_recommendations.get_artist_studio_albums(
-                    artist_name, discogs_key, discogs_secret, top_n=2
-                )
-                for album in fresh_albums:
-                    all_albums.append({
-                        "artist_name": artist_name,
-                        "album_name": album.title,
-                        "year": album.year,
-                        "discogs_master_id": album.discogs_master_id,
-                        "discogs_release_id": album.discogs_release_id,
-                        "rating": album.rating,
-                        "votes": album.votes,
-                        "cover_url": album.cover_url,
-                        "lastfm_score": lastfm_score,
-                        "lastfm_playcount": lastfm_playcount,
-                        "source": "lastfm"
-                    })
-            except Exception as e:
-                log_event("recommender-service", "WARNING", f"Failed to get albums for {artist_name}: {str(e)}")
-                continue
     
     end_time = time.time()
     total_time = end_time - start_time
