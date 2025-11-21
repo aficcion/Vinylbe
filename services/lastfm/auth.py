@@ -24,7 +24,8 @@ class LastFMAuthManager:
     
     def _generate_signature(self, params: dict) -> str:
         """Generate MD5 signature for Last.fm API calls"""
-        sorted_params = sorted(params.items())
+        params_without_format = {k: v for k, v in params.items() if k != 'format'}
+        sorted_params = sorted(params_without_format.items())
         sig_string = ''.join([f'{k}{v}' for k, v in sorted_params])
         sig_string += self.api_secret
         return hashlib.md5(sig_string.encode('utf-8')).hexdigest()
