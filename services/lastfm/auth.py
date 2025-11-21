@@ -69,14 +69,25 @@ class LastFMAuthManager:
         
         async with httpx.AsyncClient() as client:
             resp = await client.get(self.api_base, params=params)
+            
             if resp.status_code != 200:
+                print(f"Last.fm API error: status={resp.status_code}, body={resp.text}")
                 return False
             
             data = resp.json()
+            
+            if "error" in data:
+                error_msg = data.get("message", "Unknown error")
+                print(f"Last.fm error response: {error_msg}")
+                return False
+            
             session = data.get("session", {})
             self.session_key = session.get("key")
             self.username = session.get("name")
-            return bool(self.session_key)
+            
+            success = bool(self.session_key)
+            print(f"Session key obtained: {success}, username: {self.username}")
+            return success
     
     def get_session_key(self) -> Optional[str]:
         return self.session_key

@@ -76,10 +76,10 @@ async function loginLastfm() {
 }
 
 async function completeLastfmAuth(token) {
-    showLoading(true, 'Completando autenticación con Last.fm...');
+    showLoading(true, 'Esperando confirmación de Last.fm (5 segundos)...');
     
     try {
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 5000));
         
         const response = await fetch(`/auth/lastfm/callback?token=${token}`);
         const data = await response.json();
@@ -97,14 +97,13 @@ async function completeLastfmAuth(token) {
             return true;
         } else {
             showLoading(false);
-            const errorMsg = data.detail || 'Por favor, asegúrate de haber CLICK en "YES, ALLOW ACCESS" en la ventana de Last.fm';
-            alert(`Error al conectar: ${errorMsg}`);
+            alert(`❌ Error: No se pudo conectar con Last.fm.\n\n✅ Pasos a seguir:\n1. Asegúrate de hacer clic en "YES, ALLOW ACCESS" en la ventana de Last.fm\n2. Espera a que veas "Application authenticated"\n3. ESPERA 5-10 segundos más\n4. Luego haz clic en "Ya autoricé en Last.fm"`);
             return false;
         }
     } catch (error) {
         showLoading(false);
         console.error('Error completing Last.fm auth:', error);
-        alert('Error: Asegúrate de haber hecho click en "YES, ALLOW ACCESS" en Last.fm y espera 2-3 segundos antes de confirmar aquí.');
+        alert('❌ Error de conexión. Por favor intenta de nuevo siguiendo estos pasos:\n\n1. Haz clic en "YES, ALLOW ACCESS" en Last.fm\n2. ESPERA 5-10 segundos después de ver "Application authenticated"\n3. Haz clic en "Ya autoricé en Last.fm"');
         return false;
     }
 }
