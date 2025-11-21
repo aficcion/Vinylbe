@@ -72,6 +72,93 @@ async def health_check():
     ).dict()
 
 
+@app.post("/lastfm-recommendations")
+async def lastfm_recommendations(artists: List[dict]):
+    """
+    Generate album recommendations from Last.fm artists using PostgreSQL cache
+    Input: [{"name": "Artist Name", "score": 250.5, "playcount": 1234}, ...]
+    """
+    import time
+    from . import artist_recommendations
+    start_time = time.time()
+    
+    log_event("recommender-service", "INFO", f"Generating Last.fm recommendations for {len(artists)} artists")
+    
+    all_albums = []
+    cache_hits = 0
+    cache_misses = 0
+    
+    for artist in artists[:50]:
+        artist_name = artist.get("name")
+        lastfm_score = artist.get("score", 0)
+        lastfm_playcount = artist.get("playcount", 0)
+        
+        if not artist_name:
+            continue
+        
+        cached_albums = artist_recommendations._get_cached_artist_albums(artist_name)
+        
+        if cached_albums:
+            cache_hits += 1
+            for album in cached_albums[:2]:
+                all_albums.append({
+                    "artist_name": artist_name,
+                    "album_name": album.get("title"),
+                    "year": album.get("year"),
+                    "discogs_master_id": album.get("discogs_master_id"),
+                    "discogs_release_id": album.get("discogs_release_id"),
+                    "rating": album.get("rating"),
+                    "votes": album.get("votes"),
+                    "cover_url": album.get("cover_url"),
+                    "lastfm_score": lastfm_score,
+                    "lastfm_playcount": lastfm_playcount,
+                    "source": "lastfm"
+                })
+        else:
+            cache_misses += 1
+            try:
+                discogs_key = os.getenv("DISCOGS_CONSUMER_KEY")
+                discogs_secret = os.getenv("DISCOGS_CONSUMER_SECRET")
+                fresh_albums = artist_recommendations.get_artist_studio_albums(
+                    artist_name, discogs_key, discogs_secret, top_n=2
+                )
+                for album in fresh_albums:
+                    all_albums.append({
+                        "artist_name": artist_name,
+                        "album_name": album.title,
+                        "year": album.year,
+                        "discogs_master_id": album.discogs_master_id,
+                        "discogs_release_id": album.discogs_release_id,
+                        "rating": album.rating,
+                        "votes": album.votes,
+                        "cover_url": album.cover_url,
+                        "lastfm_score": lastfm_score,
+                        "lastfm_playcount": lastfm_playcount,
+                        "source": "lastfm"
+                    })
+            except Exception as e:
+                log_event("recommender-service", "WARNING", f"Failed to get albums for {artist_name}: {str(e)}")
+                continue
+    
+    end_time = time.time()
+    total_time = end_time - start_time
+    
+    log_event("recommender-service", "INFO", 
+              f"Generated {len(all_albums)} Last.fm recommendations in {total_time:.2f}s "
+              f"(cache hits: {cache_hits}, misses: {cache_misses})")
+    
+    return {
+        "albums": all_albums,
+        "total": len(all_albums),
+        "stats": {
+            "cache_hits": cache_hits,
+            "cache_misses": cache_misses,
+            "artists_processed": len(artists[:50]),
+            "total_time_seconds": round(total_time, 2)
+        }
+    }
+
+
 @app.post("/score-tracks")
 async def score_tracks(tracks: List[dict]):
     import time

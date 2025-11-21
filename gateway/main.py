@@ -615,35 +615,19 @@ async def get_lastfm_recommendations(request: dict):
         scored_artists = scored_artists_resp.json().get("scored_artists", [])
         log_event("gateway", "INFO", f"Scored {len(scored_artists)} Last.fm artists")
         
-        log_event("gateway", "INFO", "Step 4: Generating album recommendations from Last.fm artists")
-        top_artists = sorted(scored_artists, key=lambda x: x.get("score", 0), reverse=True)[:50]
+        log_event("gateway", "INFO", "Step 4: Generating album recommendations from Last.fm artists (using cache)")
+        albums_resp = await http_client.post(
+            f"{RECOMMENDER_SERVICE_URL}/lastfm-recommendations",
+            json=scored_artists
+        )
+        albums_data = albums_resp.json()
+        albums = albums_data.get("albums", [])
+        cache_stats = albums_data.get("stats", {})
         
-        all_recommendations = []
-        for artist in top_artists:
-            artist_name = artist.get("name")
-            if not artist_name:
-                continue
-            
-            try:
-                artist_recs_resp = await http_client.post(
-                    f"{RECOMMENDER_SERVICE_URL}/artist-single-recommendation",
-                    json={"artist_name": artist_name, "top_albums": 2}
-                )
-                artist_recs = artist_recs_resp.json().get("recommendations", [])
-                
-                for rec in artist_recs:
-                    rec["lastfm_score"] = artist.get("score", 0)
-                    rec["lastfm_playcount"] = artist.get("playcount", 0)
-                    rec["source"] = "lastfm"
-                
-                all_recommendations.extend(artist_recs)
-                
-            except Exception as e:
-                log_event("gateway", "WARNING", f"Failed to get albums for artist {artist_name}: {str(e)}")
-                continue
-        
-        albums = all_recommendations
-        log_event("gateway", "INFO", f"Generated {len(albums)} album recommendations from Last.fm artists")
+        log_event("gateway", "INFO", 
+                 f"Generated {len(albums)} Last.fm recommendations "
+                 f"(cache hits: {cache_stats.get('cache_hits', 0)}, "
+                 f"misses: {cache_stats.get('cache_misses', 0)})")
         
         end_time = time.time()
         total_time = end_time - start_time
