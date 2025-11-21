@@ -110,6 +110,33 @@ async def get_master_link(artist: str, album: str):
     return result
 
 
+@app.get("/search-album")
+async def search_album_cover(artist: str = Query(...), album: str = Query(...)):
+    """
+    Simplified search that returns only the cover URL for an album
+    Used by Last.fm recommendations to populate basic album entries
+    """
+    if not discogs_client:
+        raise HTTPException(status_code=500, detail="Discogs client not initialized")
+    
+    log_event("discogs-service", "INFO", f"Searching cover for: {artist} - {album}")
+    
+    try:
+        response = await discogs_client.search_release(artist, album)
+        results = response.get("results", [])
+        
+        if results:
+            cover_url = results[0].get("cover_image") or results[0].get("thumb")
+            log_event("discogs-service", "INFO", f"Cover found for {artist} - {album}")
+            return {"cover_url": cover_url, "found": True}
+        else:
+            log_event("discogs-service", "INFO", f"No cover found for {artist} - {album}")
+            return {"cover_url": None, "found": False}
+    except Exception as e:
+        log_event("discogs-service", "ERROR", f"Error searching cover: {str(e)}")
+        return {"cover_url": None, "found": False, "error": str(e)}
+
+
 @app.get("/master-tracklist/{master_id}")
 async def get_master_tracklist(master_id: int):
     if not discogs_client:

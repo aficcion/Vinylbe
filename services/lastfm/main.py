@@ -187,3 +187,27 @@ async def get_top_artists(request: TimeRangeRequest):
     except Exception as e:
         log_event("lastfm-service", "ERROR", f"Failed to get top artists: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/top-albums")
+async def get_top_albums(request: TimeRangeRequest):
+    if request.username not in lastfm_clients:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    client = lastfm_clients[request.username]
+    
+    period_map = {
+        "short_term": "7day",
+        "medium_term": "3month",
+        "long_term": "12month"
+    }
+    
+    period = period_map.get(request.time_range, "3month")
+    
+    try:
+        albums = await client.get_top_albums(period=period)
+        log_event("lastfm-service", "INFO", f"Retrieved {len(albums)} top albums for {request.username}, period={period}")
+        return {"albums": albums, "total": len(albums)}
+    except Exception as e:
+        log_event("lastfm-service", "ERROR", f"Failed to get top albums: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

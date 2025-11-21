@@ -585,49 +585,29 @@ async def get_lastfm_recommendations(request: dict):
     log_event("gateway", "INFO", f"Starting Last.fm recommendation flow for {username} (time_range={time_range})")
     
     try:
-        log_event("gateway", "INFO", "Step 1: Fetching top tracks from Last.fm")
-        tracks_resp = await http_client.post(
-            f"{LASTFM_SERVICE_URL}/top-tracks",
-            json={"time_range": time_range, "username": username}
-        )
-        tracks_data = tracks_resp.json()
-        all_tracks = tracks_data.get("tracks", [])
-        
-        for track in all_tracks:
-            track["time_range"] = time_range
-        
-        log_event("gateway", "INFO", f"Fetched {len(all_tracks)} Last.fm tracks")
-        
-        log_event("gateway", "INFO", "Step 2: Fetching top artists from Last.fm")
-        artists_resp = await http_client.post(
-            f"{LASTFM_SERVICE_URL}/top-artists",
-            json={"time_range": time_range, "username": username}
-        )
-        artists_data = artists_resp.json()
-        all_artists = artists_data.get("artists", [])
-        log_event("gateway", "INFO", f"Fetched {len(all_artists)} Last.fm artists")
-        
-        log_event("gateway", "INFO", "Step 3: Scoring Last.fm artists")
-        scored_artists_resp = await http_client.post(
-            f"{RECOMMENDER_SERVICE_URL}/score-lastfm-artists",
-            json=all_artists
-        )
-        scored_artists = scored_artists_resp.json().get("scored_artists", [])
-        log_event("gateway", "INFO", f"Scored {len(scored_artists)} Last.fm artists")
-        
-        log_event("gateway", "INFO", "Step 4: Generating album recommendations from Last.fm artists (using cache)")
+        log_event("gateway", "INFO", "Step 1: Fetching top albums from Last.fm (simplified)")
         albums_resp = await http_client.post(
-            f"{RECOMMENDER_SERVICE_URL}/lastfm-recommendations",
-            json=scored_artists
+            f"{LASTFM_SERVICE_URL}/top-albums",
+            json={"time_range": time_range, "username": username}
         )
         albums_data = albums_resp.json()
-        albums = albums_data.get("albums", [])
-        cache_stats = albums_data.get("stats", {})
+        all_albums = albums_data.get("albums", [])
+        log_event("gateway", "INFO", f"Fetched {len(all_albums)} Last.fm top albums")
+        
+        log_event("gateway", "INFO", "Step 2: Processing albums (cache-first + cover fetch)")
+        recommendations_resp = await http_client.post(
+            f"{RECOMMENDER_SERVICE_URL}/lastfm-albums-recommendations",
+            json=all_albums
+        )
+        recommendations_data = recommendations_resp.json()
+        albums = recommendations_data.get("albums", [])
+        stats = recommendations_data.get("stats", {})
         
         log_event("gateway", "INFO", 
-                 f"Generated {len(albums)} Last.fm recommendations "
-                 f"(cache hits: {cache_stats.get('cache_hits', 0)}, "
-                 f"misses: {cache_stats.get('cache_misses', 0)})")
+                 f"Processed {len(albums)} Last.fm recommendations "
+                 f"(cache: {stats.get('cache_hits', 0)}, "
+                 f"new: {stats.get('cache_misses', 0)}, "
+                 f"covers fetched: {stats.get('covers_fetched', 0)})")
         
         end_time = time.time()
         total_time = end_time - start_time
@@ -638,9 +618,11 @@ async def get_lastfm_recommendations(request: dict):
             "total": len(albums),
             "total_time_seconds": round(total_time, 2),
             "stats": {
-                "tracks_analyzed": len(all_tracks),
-                "artists_analyzed": len(all_artists),
-                "albums_found": len(albums)
+                "albums_processed": len(all_albums),
+                "albums_found": len(albums),
+                "cache_hits": stats.get("cache_hits", 0),
+                "cache_misses": stats.get("cache_misses", 0),
+                "covers_fetched": stats.get("covers_fetched", 0)
             }
         }
     

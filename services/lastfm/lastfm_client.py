@@ -108,6 +108,44 @@ class LastFMClient:
         
         return all_artists[:limit]
     
+    async def get_top_albums(self, period: str = "3month", limit: int = 50) -> List[dict]:
+        """
+        Get user's top albums for a given period
+        period: overall | 7day | 1month | 3month | 6month | 12month
+        """
+        all_albums = []
+        page = 1
+        per_page = 50
+        
+        while len(all_albums) < limit:
+            log_event("lastfm-client", "INFO", f"Fetching albums page={page}, period={period}")
+            
+            params = {
+                "method": "user.getTopAlbums",
+                "user": self.username,
+                "period": period,
+                "limit": per_page,
+                "page": page
+            }
+            
+            data = await self._request("GET", params)
+            albums_data = data.get("topalbums", {}).get("album", [])
+            
+            if not albums_data:
+                break
+            
+            if isinstance(albums_data, dict):
+                albums_data = [albums_data]
+            
+            all_albums.extend(albums_data)
+            
+            if len(albums_data) < per_page:
+                break
+            
+            page += 1
+        
+        return all_albums[:limit]
+    
     async def get_user_info(self) -> dict:
         """Get user profile information"""
         params = {
