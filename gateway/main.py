@@ -607,15 +607,7 @@ async def get_lastfm_recommendations(request: dict):
         all_artists = artists_data.get("artists", [])
         log_event("gateway", "INFO", f"Fetched {len(all_artists)} Last.fm artists")
         
-        log_event("gateway", "INFO", "Step 3: Scoring Last.fm tracks")
-        scored_tracks_resp = await http_client.post(
-            f"{RECOMMENDER_SERVICE_URL}/score-lastfm-tracks",
-            json=all_tracks
-        )
-        scored_tracks = scored_tracks_resp.json().get("scored_tracks", [])
-        log_event("gateway", "INFO", f"Scored {len(scored_tracks)} Last.fm tracks")
-        
-        log_event("gateway", "INFO", "Step 4: Scoring Last.fm artists")
+        log_event("gateway", "INFO", "Step 3: Scoring Last.fm artists")
         scored_artists_resp = await http_client.post(
             f"{RECOMMENDER_SERVICE_URL}/score-lastfm-artists",
             json=all_artists
@@ -623,13 +615,35 @@ async def get_lastfm_recommendations(request: dict):
         scored_artists = scored_artists_resp.json().get("scored_artists", [])
         log_event("gateway", "INFO", f"Scored {len(scored_artists)} Last.fm artists")
         
-        log_event("gateway", "INFO", "Step 5: Aggregating albums from Last.fm data")
-        albums_resp = await http_client.post(
-            f"{RECOMMENDER_SERVICE_URL}/aggregate-albums",
-            json={"scored_tracks": scored_tracks, "scored_artists": scored_artists}
-        )
-        albums = albums_resp.json().get("albums", [])
-        log_event("gateway", "INFO", f"Generated {len(albums)} album recommendations from Last.fm")
+        log_event("gateway", "INFO", "Step 4: Generating album recommendations from Last.fm artists")
+        top_artists = sorted(scored_artists, key=lambda x: x.get("score", 0), reverse=True)[:50]
+        
+        all_recommendations = []
+        for artist in top_artists:
+            artist_name = artist.get("name")
+            if not artist_name:
+                continue
+            
+            try:
+                artist_recs_resp = await http_client.post(
+                    f"{RECOMMENDER_SERVICE_URL}/recommendations/single-artist",
+                    json={"artist_name": artist_name, "top_albums": 2}
+                )
+                artist_recs = artist_recs_resp.json().get("albums", [])
+                
+                for rec in artist_recs:
+                    rec["lastfm_score"] = artist.get("score", 0)
+                    rec["lastfm_playcount"] = artist.get("playcount", 0)
+                    rec["source"] = "lastfm"
+                
+                all_recommendations.extend(artist_recs)
+                
+            except Exception as e:
+                log_event("gateway", "WARNING", f"Failed to get albums for artist {artist_name}: {str(e)}")
+                continue
+        
+        albums = all_recommendations
+        log_event("gateway", "INFO", f"Generated {len(albums)} album recommendations from Last.fm artists")
         
         end_time = time.time()
         total_time = end_time - start_time
