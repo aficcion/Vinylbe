@@ -146,6 +146,28 @@ class LastFMClient:
         
         return all_albums[:limit]
     
+    async def search_artist(self, query: str, limit: int = 30) -> List[dict]:
+        """
+        Search for artists by name
+        """
+        log_event("lastfm-client", "INFO", f"Searching artists: {query}")
+        
+        params = {
+            "method": "artist.search",
+            "artist": query,
+            "limit": limit
+        }
+        
+        data = await self._request("GET", params)
+        results = data.get("results", {})
+        artist_matches = results.get("artistmatches", {})
+        artists = artist_matches.get("artist", [])
+        
+        if isinstance(artists, dict):
+            artists = [artists]
+        
+        return artists
+    
     async def get_user_info(self) -> dict:
         """Get user profile information"""
         params = {

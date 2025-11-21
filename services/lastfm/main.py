@@ -211,3 +211,25 @@ async def get_top_albums(request: TimeRangeRequest):
     except Exception as e:
         log_event("lastfm-service", "ERROR", f"Failed to get top albums: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/search")
+async def search_artists(q: str):
+    """Search for artists (public endpoint, no auth required)"""
+    if len(q) < 2:
+        raise HTTPException(status_code=400, detail="Query must be at least 2 characters")
+    
+    try:
+        api_key = os.getenv("LASTFM_API_KEY")
+        temp_client = LastFMClient(api_key, "public")
+        await temp_client.start()
+        
+        try:
+            artists = await temp_client.search_artist(q)
+            log_event("lastfm-service", "INFO", f"Found {len(artists)} artists for query: {q}")
+            return {"artists": artists, "total": len(artists)}
+        finally:
+            await temp_client.close()
+    except Exception as e:
+        log_event("lastfm-service", "ERROR", f"Artist search failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
