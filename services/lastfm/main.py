@@ -2,22 +2,35 @@ import os
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from contextlib import asynccontextmanager
-from typing import List
+from typing import List, Optional, Tuple
 from pydantic import BaseModel
 from libs.shared.utils import log_event
 from .auth import LastFMAuthManager
 from .lastfm_client import LastFMClient
 
-
 from typing import Dict
 import time
 import asyncio
+import httpx
+import re
 
 auth_managers: Dict[str, tuple[LastFMAuthManager, float]] = {}
 lastfm_clients: Dict[str, LastFMClient] = {}
 AUTH_TOKEN_TTL = 600
+
+DISCOGS_BASE = "https://api.discogs.com"
+
+
+class ArtistSearchResult(BaseModel):
+    name: str
+    image_url: Optional[str] = None
+    genres: List[str] = []
+
+
+class SearchResponse(BaseModel):
+    artists: List[ArtistSearchResult]
 
 
 async def cleanup_expired_tokens():
@@ -213,23 +226,90 @@ async def get_top_albums(request: TimeRangeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/search")
-async def search_artists(q: str):
-    """Search for artists (public endpoint, no auth required)"""
-    if len(q) < 2:
-        raise HTTPException(status_code=400, detail="Query must be at least 2 characters")
-    
+def _clean_artist_name(name: str) -> str:
+    """Remove Discogs ID numbers like (11), (3) from artist names"""
+    cleaned = re.sub(r'\s*\(\d+\)\s*$', '', name)
+    return cleaned.strip()
+
+
+async def _get_genres_from_lastfm(artist_name: str) -> List[str]:
+    """Get genres/tags from Last.fm for an artist"""
     try:
         api_key = os.getenv("LASTFM_API_KEY")
-        temp_client = LastFMClient(api_key, "public")
-        await temp_client.start()
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            params = {
+                "method": "artist.getTopTags",
+                "artist": artist_name,
+                "api_key": api_key,
+                "format": "json"
+            }
+            resp = await client.get("https://ws.audioscrobbler.com/2.0/", params=params)
+            if resp.status_code == 200:
+                data = resp.json()
+                tags = data.get("toptags", {}).get("tag", [])
+                if isinstance(tags, list):
+                    return [tag.get("name", "") for tag in tags[:5]]
+                elif isinstance(tags, dict):
+                    return [tags.get("name", "")]
+    except Exception as e:
+        log_event("lastfm-service", "WARNING", f"Failed to get genres for {artist_name}: {str(e)}")
+    return []
+
+
+@app.get("/search", response_model=SearchResponse)
+async def search_artists(q: str = Query(..., min_length=2)):
+    """Search artists via Discogs, clean names, deduplicate, fetch Last.fm genres"""
+    try:
+        discogs_key = os.getenv("DISCOGS_CONSUMER_KEY")
+        discogs_secret = os.getenv("DISCOGS_CONSUMER_SECRET")
         
-        try:
-            artists = await temp_client.search_artist(q)
-            log_event("lastfm-service", "INFO", f"Found {len(artists)} artists for query: {q}")
-            return {"artists": artists, "total": len(artists)}
-        finally:
-            await temp_client.close()
+        if not discogs_key or not discogs_secret:
+            raise HTTPException(status_code=500, detail="Discogs credentials not configured")
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            params = {
+                "q": q.strip(),
+                "type": "artist",
+                "key": discogs_key,
+                "secret": discogs_secret,
+                "per_page": "20"
+            }
+            
+            resp = await client.get(f"{DISCOGS_BASE}/database/search", params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            
+            results = data.get("results", [])
+            
+            seen_names = {}
+            artists: List[ArtistSearchResult] = []
+            
+            for res in results:
+                raw_title = res.get("title", "")
+                thumb = res.get("thumb")
+                
+                clean_name = _clean_artist_name(raw_title)
+                
+                if clean_name in seen_names:
+                    continue
+                
+                seen_names[clean_name] = thumb
+                
+                genres = await _get_genres_from_lastfm(clean_name)
+                
+                artist = ArtistSearchResult(
+                    name=clean_name,
+                    image_url=thumb,
+                    genres=genres
+                )
+                artists.append(artist)
+                
+                if len(artists) >= 10:
+                    break
+            
+            log_event("lastfm-service", "INFO", f"Found {len(artists)} unique artists for query: {q}")
+            return SearchResponse(artists=artists)
+            
     except Exception as e:
         log_event("lastfm-service", "ERROR", f"Artist search failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
