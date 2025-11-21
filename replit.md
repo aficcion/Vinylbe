@@ -20,7 +20,7 @@ The user interface features a clean, minimalist landing page with dark/light the
 The system uses a microservices architecture built with FastAPI and Python 3.11, employing asynchronous communication with `httpx` and `asyncio.gather`. Shared models ensure data consistency, and structured logging is implemented.
 
 -   **Spotify Integration**: Handles OAuth, retrieves user's top tracks and artists (short/medium/long term), refreshes tokens, and provides album streaming links. Uses position-based scoring algorithm.
--   **Last.fm Integration**: Handles authentication flow (token → user authorization → session key), retrieves user's top tracks and artists with period mapping (7day/3month/12month), and uses playcount-based scoring algorithm that normalizes play counts across time ranges.
+-   **Last.fm Integration**: Handles authentication flow (token → user authorization → session key), retrieves user's **top albums directly** via `user.gettopalbums` (simplified approach), with period mapping (7day/3month/12month). Uses cache-first strategy: checks PostgreSQL for existing album data, creates basic DB entries for new albums, and fetches covers from Discogs on-demand only when needed. This approach minimizes API calls and avoids rate limiting.
 -   **Discogs Integration**: Normalizes album titles, implements master/release fallback, retrieves tracklists with durations, provides marketplace statistics (prices in EUR), generates sales links, and includes robust rate limiting. It also fetches artist images.
 -   **Recommendation Engine**: Dual scoring algorithms (position-based for Spotify, playcount-based for Last.fm), aggregates albums, filters by track count, and boosts scores for favorite artists. It supports background recommendation generation per artist, caching, and intelligent fallbacks, merging Spotify, Last.fm, and artist-based recommendations with advanced deduplication.
 -   **Pricing Service**: Finds best prices on eBay (filtered by EU location, converted to EUR, with shipping to Spain) and provides links to specific local vinyl stores.
@@ -38,12 +38,19 @@ The architecture comprises **six independent microservices**: `Spotify Service` 
 
 **Scoring Mechanisms:**
 - **Spotify**: Position-based with time range boosts (short_term: 3.0x, medium_term: 2.0x, long_term: 1.0x)
-- **Last.fm**: Playcount-based with normalized scores (max playcount = 300 points) × same time range boosts
+- **Last.fm**: Simplified playcount-based system using `user.gettopalbums` directly. Cache-first: checks DB for album data first, only calls Discogs for cover art when creating new album entries.
+
+**Last.fm Optimization (Nov 2025):**
+- Uses `user.gettopalbums` endpoint directly instead of `top-artists` → `get albums per artist`
+- Cache-first strategy: queries PostgreSQL before external APIs
+- Creates basic artist/album DB entries for new discoveries
+- Fetches covers from Discogs on-demand (only for cache misses)
+- Allows future background jobs to enrich basic entries with full metadata
 
 ## External Dependencies
 
 -   **Spotify API**: User authentication (OAuth 2.0), top tracks, top artists with time ranges.
--   **Last.fm API**: User authentication (token-based flow), top tracks, top artists with period filters, playcount data.
+-   **Last.fm API**: User authentication (token-based flow), **top albums** (`user.gettopalbums`) with period filters, playcount data.
 -   **Discogs API**: Vinyl release search, marketplace statistics, sales link generation, artist images.
 -   **MusicBrainz API**: Artist discographies, studio albums, metadata.
 -   **eBay Browse API**: Vinyl record pricing, filtering, currency conversion.
