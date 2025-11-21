@@ -547,10 +547,10 @@ function filterRecommendations(filter) {
 function createAlbumCard(rec) {
     let artist, album, cover;
     
-    if (rec.source === 'artist_based') {
+    if (rec.source === 'artist_based' || rec.source === 'lastfm') {
         artist = rec.artist_name || 'Unknown Artist';
         album = rec.album_name || 'Unknown Album';
-        cover = rec.image_url || 'https://via.placeholder.com/300x300?text=No+Cover';
+        cover = rec.cover_url || rec.image_url || 'https://via.placeholder.com/300x300?text=No+Cover';
     } else {
         const albumInfo = rec.album_info || {};
         artist = albumInfo.artists?.[0]?.name || 'Unknown Artist';
@@ -579,10 +579,10 @@ function createAlbumCard(rec) {
 async function openAlbumDetail(rec) {
     let artist, album, cover, spotifyUrl;
     
-    if (rec.source === 'artist_based') {
+    if (rec.source === 'artist_based' || rec.source === 'lastfm') {
         artist = rec.artist_name || 'Unknown Artist';
         album = rec.album_name || 'Unknown Album';
-        cover = rec.image_url || 'https://via.placeholder.com/300x300?text=No+Cover';
+        cover = rec.cover_url || rec.image_url || 'https://via.placeholder.com/300x300?text=No+Cover';
         spotifyUrl = null;
     } else {
         const albumInfo = rec.album_info || {};
