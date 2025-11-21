@@ -41,13 +41,30 @@ async function loginLastfm() {
             const confirmBtn = document.createElement('button');
             confirmBtn.textContent = 'Ya autoricé en Last.fm';
             confirmBtn.className = 'lastfm-confirm-btn';
-            confirmBtn.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10000;padding:15px 30px;background:#d51007;color:white;border:none;border-radius:8px;font-size:16px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.3)';
+            confirmBtn.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10000;padding:20px 40px;background:#d51007;color:white;border:none;border-radius:12px;font-size:18px;font-weight:bold;cursor:pointer;box-shadow:0 8px 24px rgba(213,16,7,0.4);transition:all 0.3s;';
+            confirmBtn.onmouseover = () => {
+                confirmBtn.style.transform = 'translate(-50%,-50%) scale(1.05)';
+                confirmBtn.style.boxShadow = '0 12px 32px rgba(213,16,7,0.5)';
+            };
+            confirmBtn.onmouseout = () => {
+                confirmBtn.style.transform = 'translate(-50%,-50%) scale(1)';
+                confirmBtn.style.boxShadow = '0 8px 24px rgba(213,16,7,0.4)';
+            };
             confirmBtn.onclick = async () => {
-                document.body.removeChild(confirmBtn);
-                if (popupWindow && !popupWindow.closed) {
-                    popupWindow.close();
+                confirmBtn.disabled = true;
+                confirmBtn.textContent = 'Conectando...';
+                
+                const success = await completeLastfmAuth(data.token);
+                
+                if (success) {
+                    document.body.removeChild(confirmBtn);
+                    if (popupWindow && !popupWindow.closed) {
+                        popupWindow.close();
+                    }
+                } else {
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = 'Reintentar';
                 }
-                await completeLastfmAuth(data.token);
             };
             
             document.body.appendChild(confirmBtn);
@@ -62,6 +79,8 @@ async function completeLastfmAuth(token) {
     showLoading(true, 'Completando autenticación con Last.fm...');
     
     try {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
         const response = await fetch(`/auth/lastfm/callback?token=${token}`);
         const data = await response.json();
         
@@ -74,14 +93,19 @@ async function completeLastfmAuth(token) {
             setTimeout(async () => {
                 await loadAllRecommendations();
             }, 1000);
+            
+            return true;
         } else {
             showLoading(false);
-            alert('Error: Por favor, asegúrate de haber autorizado la aplicación en Last.fm.');
+            const errorMsg = data.detail || 'Por favor, asegúrate de haber CLICK en "YES, ALLOW ACCESS" en la ventana de Last.fm';
+            alert(`Error al conectar: ${errorMsg}`);
+            return false;
         }
     } catch (error) {
         showLoading(false);
         console.error('Error completing Last.fm auth:', error);
-        alert('Error al completar la autenticación. Por favor, intenta de nuevo.');
+        alert('Error: Asegúrate de haber hecho click en "YES, ALLOW ACCESS" en Last.fm y espera 2-3 segundos antes de confirmar aquí.');
+        return false;
     }
 }
 
