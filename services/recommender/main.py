@@ -74,108 +74,111 @@ async def health_check():
 
 @app.post("/lastfm-albums-recommendations")
 async def lastfm_albums_recommendations(albums: List[dict]):
-    """
-    Simplified Last.fm recommendations using user.gettopalbums
-    Input: [{"name": "Album Name", "artist": {"name": "Artist"}, "playcount": "123"}, ...]
-    
-    Logic:
-    1. Check cache for album
-    2. If found: use cached data (incl. cover)
-    3. If not found: create basic DB entry + fetch cover from Discogs (on-demand)
-    """
+    """Simplified: user.gettopalbums → cache-first → fetch covers on-demand"""
     import time
     import asyncio
     import httpx
+    from concurrent.futures import ThreadPoolExecutor
     from . import db_utils
     
     start_time = time.time()
-    log_event("recommender-service", "INFO", f"Processing {len(albums)} Last.fm top albums")
+    log_event("recommender-service", "INFO", f"Processing {len(albums)} Last.fm albums")
     
     all_recommendations = []
     cache_hits = 0
     cache_misses = 0
     covers_fetched = 0
     
-    async with httpx.AsyncClient() as client:
-        for album_data in albums[:50]:
-            try:
-                album_name = album_data.get("name", "").strip()
-                artist_data = album_data.get("artist", {})
-                
-                if isinstance(artist_data, str):
-                    artist_name = artist_data.strip()
-                else:
-                    artist_name = artist_data.get("name", "").strip()
-                
-                playcount = int(album_data.get("playcount", 0))
-                
-                if not album_name or not artist_name:
+    def fetch_from_db(artist_name, album_name):
+        """Run DB lookup in thread pool to avoid blocking"""
+        return db_utils.get_cached_album(artist_name, album_name)
+    
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            loop = asyncio.get_event_loop()
+            
+            for album_data in albums[:50]:
+                try:
+                    album_name = album_data.get("name", "").strip()
+                    artist_data = album_data.get("artist", {})
+                    
+                    if isinstance(artist_data, str):
+                        artist_name = artist_data.strip()
+                    else:
+                        artist_name = artist_data.get("name", "").strip()
+                    
+                    playcount = int(album_data.get("playcount", 0))
+                    
+                    if not album_name or not artist_name:
+                        continue
+                    
+                    cached_album = await loop.run_in_executor(
+                        executor, fetch_from_db, artist_name, album_name
+                    )
+                    
+                    if cached_album:
+                        cache_hits += 1
+                        all_recommendations.append({
+                            "artist_name": artist_name,
+                            "album_name": cached_album["title"],
+                            "year": cached_album.get("year"),
+                            "discogs_master_id": cached_album.get("discogs_master_id"),
+                            "discogs_release_id": cached_album.get("discogs_release_id"),
+                            "rating": cached_album.get("rating"),
+                            "votes": cached_album.get("votes"),
+                            "cover_url": cached_album.get("cover_url"),
+                            "lastfm_playcount": playcount,
+                            "source": "lastfm"
+                        })
+                    else:
+                        cache_misses += 1
+                        
+                        cover_url = None
+                        try:
+                            resp = await client.get(
+                                f"http://localhost:3001/search-album",
+                                params={"artist": artist_name, "album": album_name}
+                            )
+                            if resp.status_code == 200:
+                                data = resp.json()
+                                cover_url = data.get("cover_url")
+                                if cover_url:
+                                    covers_fetched += 1
+                                    log_event("recommender-service", "DEBUG", 
+                                             f"✓ Cover fetched: {artist_name} - {album_name}")
+                        except Exception as e:
+                            log_event("recommender-service", "WARNING", 
+                                     f"Cover fetch failed: {artist_name} - {album_name}: {str(e)}")
+                        
+                        await loop.run_in_executor(
+                            executor, db_utils.create_basic_album_entry,
+                            artist_name, album_name, cover_url
+                        )
+                        
+                        all_recommendations.append({
+                            "artist_name": artist_name,
+                            "album_name": album_name,
+                            "year": None,
+                            "discogs_master_id": None,
+                            "discogs_release_id": None,
+                            "rating": None,
+                            "votes": None,
+                            "cover_url": cover_url,
+                            "lastfm_playcount": playcount,
+                            "source": "lastfm"
+                        })
+                        
+                except Exception as e:
+                    log_event("recommender-service", "ERROR", 
+                             f"Album error: {str(e)}")
                     continue
-                
-                cached_album = db_utils.get_cached_album(artist_name, album_name)
-                
-                if cached_album:
-                    cache_hits += 1
-                    all_recommendations.append({
-                        "artist_name": artist_name,
-                        "album_name": cached_album["title"],
-                        "year": cached_album.get("year"),
-                        "discogs_master_id": cached_album.get("discogs_master_id"),
-                        "discogs_release_id": cached_album.get("discogs_release_id"),
-                        "rating": cached_album.get("rating"),
-                        "votes": cached_album.get("votes"),
-                        "cover_url": cached_album.get("cover_url"),
-                        "lastfm_playcount": playcount,
-                        "source": "lastfm"
-                    })
-                else:
-                    cache_misses += 1
-                    
-                    cover_url = None
-                    try:
-                        discogs_key = os.getenv("DISCOGS_CONSUMER_KEY")
-                        discogs_secret = os.getenv("DISCOGS_CONSUMER_SECRET")
-                        
-                        url = f"http://localhost:3001/search-album?artist={artist_name}&album={album_name}"
-                        response = await client.get(url, timeout=5.0)
-                        
-                        if response.status_code == 200:
-                            data = response.json()
-                            cover_url = data.get("cover_url")
-                            if cover_url:
-                                covers_fetched += 1
-                                log_event("recommender-service", "INFO", 
-                                         f"Fetched cover for {artist_name} - {album_name}")
-                    except Exception as e:
-                        log_event("recommender-service", "WARNING", 
-                                 f"Could not fetch cover for {artist_name} - {album_name}: {str(e)}")
-                    
-                    db_utils.create_basic_album_entry(artist_name, album_name, cover_url)
-                    
-                    all_recommendations.append({
-                        "artist_name": artist_name,
-                        "album_name": album_name,
-                        "year": None,
-                        "discogs_master_id": None,
-                        "discogs_release_id": None,
-                        "rating": None,
-                        "votes": None,
-                        "cover_url": cover_url,
-                        "lastfm_playcount": playcount,
-                        "source": "lastfm"
-                    })
-                    
-            except Exception as e:
-                log_event("recommender-service", "ERROR", 
-                         f"Error processing album {album_data}: {str(e)}")
-                continue
     
     end_time = time.time()
     total_time = end_time - start_time
     
     log_event("recommender-service", "INFO", 
-              f"Processed {len(all_recommendations)} albums in {total_time:.2f}s "
-              f"(cache: {cache_hits}, new: {cache_misses}, covers fetched: {covers_fetched})")
+              f"✓ {len(all_recommendations)} albums processed in {total_time:.2f}s "
+              f"(hits: {cache_hits}, new: {cache_misses}, covers: {covers_fetched})")
     
     return {
         "albums": all_recommendations,

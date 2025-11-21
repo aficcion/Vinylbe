@@ -1,24 +1,29 @@
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from psycopg2 import pool
 from datetime import datetime
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from libs.shared.utils import log_event
 
+_db_pool = None
 
-def get_db_connection():
-    """Get database connection"""
-    return psycopg2.connect(os.getenv("DATABASE_URL"))
-
+def _get_pool():
+    """Get or create database connection pool"""
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = pool.SimpleConnectionPool(
+            1, 5, os.getenv("DATABASE_URL"),
+            connect_timeout=5
+        )
+    return _db_pool
 
 def get_cached_album(artist_name: str, album_name: str) -> dict:
-    """
-    Check if album exists in cache
-    Returns album data if found, None otherwise
-    """
+    """Check if album exists in cache (thread-safe)"""
     try:
-        with get_db_connection() as conn:
+        conn = _get_pool().getconn()
+        try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 query = """
                     SELECT 
@@ -30,7 +35,6 @@ def get_cached_album(artist_name: str, album_name: str) -> dict:
                         a.rating,
                         a.votes,
                         a.cover_url,
-                        a.last_updated,
                         ar.name as artist_name
                     FROM albums a
                     JOIN artists ar ON a.artist_id = ar.id
@@ -42,25 +46,22 @@ def get_cached_album(artist_name: str, album_name: str) -> dict:
                 result = cur.fetchone()
                 
                 if result:
-                    log_event("recommender-db", "INFO", 
-                             f"Cache HIT: {artist_name} - {album_name}")
+                    log_event("recommender-db", "DEBUG", f"✓ Cache HIT: {artist_name} - {album_name}")
                     return dict(result)
                 else:
-                    log_event("recommender-db", "INFO", 
-                             f"Cache MISS: {artist_name} - {album_name}")
+                    log_event("recommender-db", "DEBUG", f"○ Cache MISS: {artist_name} - {album_name}")
                     return None
+        finally:
+            _get_pool().putconn(conn)
     except Exception as e:
         log_event("recommender-db", "ERROR", f"Error fetching album: {str(e)}")
         return None
 
-
-def create_basic_album_entry(artist_name: str, album_name: str, cover_url: str = None):
-    """
-    Create basic artist and album entries in database
-    Used for albums discovered via Last.fm that aren't in cache yet
-    """
+def create_basic_album_entry(artist_name: str, album_name: str, cover_url: str = None) -> bool:
+    """Create basic artist and album entries (thread-safe)"""
     try:
-        with get_db_connection() as conn:
+        conn = _get_pool().getconn()
+        try:
             with conn.cursor() as cur:
                 artist_id = _get_or_create_artist(cur, artist_name)
                 
@@ -72,9 +73,8 @@ def create_basic_album_entry(artist_name: str, album_name: str, cover_url: str =
                 existing = cur.fetchone()
                 
                 if existing:
-                    log_event("recommender-db", "INFO", 
-                             f"Album already exists: {artist_name} - {album_name}")
-                    return
+                    log_event("recommender-db", "DEBUG", f"Album exists: {artist_name} - {album_name}")
+                    return False
                 
                 insert_album = """
                     INSERT INTO albums (artist_id, title, cover_url, last_updated)
@@ -83,17 +83,16 @@ def create_basic_album_entry(artist_name: str, album_name: str, cover_url: str =
                 cur.execute(insert_album, (artist_id, album_name, cover_url, datetime.now()))
                 conn.commit()
                 
-                log_event("recommender-db", "INFO", 
-                         f"Created basic album entry: {artist_name} - {album_name}")
+                log_event("recommender-db", "DEBUG", f"✓ Created album: {artist_name} - {album_name}")
+                return True
+        finally:
+            _get_pool().putconn(conn)
     except Exception as e:
-        log_event("recommender-db", "ERROR", 
-                 f"Error creating album entry for {artist_name} - {album_name}: {str(e)}")
-
+        log_event("recommender-db", "ERROR", f"Error creating album: {artist_name} - {album_name}: {str(e)}")
+        return False
 
 def _get_or_create_artist(cur, artist_name: str) -> int:
-    """
-    Get artist ID if exists, otherwise create basic artist entry
-    """
+    """Get or create artist (cursor transaction)"""
     check_query = "SELECT id FROM artists WHERE LOWER(name) = LOWER(%s)"
     cur.execute(check_query, (artist_name,))
     result = cur.fetchone()
@@ -109,5 +108,12 @@ def _get_or_create_artist(cur, artist_name: str) -> int:
     cur.execute(insert_query, (artist_name, datetime.now()))
     artist_id = cur.fetchone()[0]
     
-    log_event("recommender-db", "INFO", f"Created basic artist entry: {artist_name}")
+    log_event("recommender-db", "DEBUG", f"✓ Created artist: {artist_name}")
     return artist_id
+
+def close_pool():
+    """Close database pool"""
+    global _db_pool
+    if _db_pool:
+        _db_pool.closeall()
+        _db_pool = None
