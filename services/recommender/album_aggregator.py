@@ -20,7 +20,7 @@ class AlbumAggregator:
     def aggregate_albums(self, scored_tracks: List[dict], scored_artists: List[dict]) -> List[dict]:
         log_event("album-aggregator", "INFO", "Starting album aggregation")
         
-        artist_scores = {artist["id"]: artist["score"] for artist in scored_artists}
+        artist_scores = {artist.get("id") or artist.get("name"): artist["score"] for artist in scored_artists}
         
         album_data: Dict[str, AlbumData] = {}
         
@@ -44,7 +44,7 @@ class AlbumAggregator:
             
             album_artists = track.get("album", {}).get("artists", [])
             for artist in album_artists:
-                artist_id = artist.get("id")
+                artist_id = artist.get("id") or artist.get("name")
                 if artist_id:
                     album_data[album_id].artists.add(artist_id)
             
