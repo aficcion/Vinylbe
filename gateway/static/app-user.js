@@ -228,7 +228,8 @@ async function generateAndSaveRecommendations(userId, lastfmUsername) {
 
         // 2.5. Save Last.fm profile (top artists) to database
         try {
-            const profileResp = await fetch(`http://localhost:3004/top-artists`, {
+            // Use relative path to gateway, not direct service URL
+            const profileResp = await fetch(`/api/lastfm/top-artists`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

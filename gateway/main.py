@@ -671,6 +671,19 @@ async def search_artists(q: str):
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
+@app.post("/api/lastfm/top-artists")
+async def get_lastfm_top_artists(request: dict):
+    if not http_client:
+        raise HTTPException(status_code=500, detail="HTTP client not initialized")
+    
+    try:
+        resp = await http_client.post(f"{LASTFM_SERVICE_URL}/top-artists", json=request)
+        return resp.json()
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Top artists fetch failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch top artists: {str(e)}")
+
+
 @app.post("/api/lastfm/recommendations")
 async def get_lastfm_recommendations(request: dict):
     if not http_client:
@@ -963,7 +976,7 @@ async def import_artists_csv(file: UploadFile = File(...)):
                     start_time = time.time()
                     
                     response = await http_client.post(
-                        "http://localhost:5000/api/recommendations/artist-single",
+                        f"{RECOMMENDER_SERVICE_URL}/artist-single-recommendation",
                         json={"artist_name": artist_name, "top_albums": 10, "csv_mode": True},
                         timeout=180.0
                     )
@@ -1023,7 +1036,7 @@ async def import_artists_csv(file: UploadFile = File(...)):
                         start_time = time.time()
                         
                         response = await http_client.post(
-                            "http://localhost:5000/api/recommendations/artist-single",
+                            f"{RECOMMENDER_SERVICE_URL}/artist-single-recommendation",
                             json={"artist_name": artist_name, "top_albums": 10, "csv_mode": True},
                             timeout=180.0
                         )
