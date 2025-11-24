@@ -1069,7 +1069,8 @@ async function handleArtistSelection(selectedArtists) {
                 // 2. Add new ones
                 for (const artist of selectedArtists) {
                     if (!dbArtistNames.has(artist.name)) {
-                        await fetch(`/api/users/${userId}/selected-artists`, {
+                        console.log(`Adding artist to DB: ${artist.name}`);
+                        const addResp = await fetch(`/api/users/${userId}/selected-artists`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -1078,17 +1079,28 @@ async function handleArtistSelection(selectedArtists) {
                                 source: 'manual'
                             })
                         });
-                        console.log(`✓ Added artist to DB: ${artist.name}`);
+
+                        if (addResp.ok) {
+                            console.log(`✓ Added artist to DB: ${artist.name}`);
+                        } else {
+                            console.error(`✗ Failed to add artist ${artist.name}:`, addResp.status, await addResp.text());
+                        }
                     }
                 }
 
                 // 3. Remove deleted ones
                 for (const dbArtist of dbArtists) {
                     if (!selectedNames.has(dbArtist.artist_name)) {
-                        await fetch(`/api/users/${userId}/selected-artists/${dbArtist.id}`, {
+                        console.log(`Removing artist from DB: ${dbArtist.artist_name}`);
+                        const delResp = await fetch(`/api/users/${userId}/selected-artists/${dbArtist.id}`, {
                             method: 'DELETE'
                         });
-                        console.log(`✓ Removed artist from DB: ${dbArtist.artist_name}`);
+
+                        if (delResp.ok) {
+                            console.log(`✓ Removed artist from DB: ${dbArtist.artist_name}`);
+                        } else {
+                            console.error(`✗ Failed to remove artist ${dbArtist.artist_name}:`, delResp.status);
+                        }
                     }
                 }
             }
