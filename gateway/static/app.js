@@ -105,6 +105,7 @@ async function loginLastfm() {
 
                     localStorage.setItem('userId', authRes.user_id);
                     console.log('Usuario guardado:', authRes.user_id);
+                    alert(`Usuario conectado: ${authRes.user_id}. Recargando...`);
 
                     if (!popup.closed) popup.close();
                     document.body.removeChild(confirmBtn);
