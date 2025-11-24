@@ -62,42 +62,60 @@ async function loginGoogle(email, displayName, googleSub) {
     } catch (e) { console.error(e); }
 }
 
-async function loginLastFm() {
+/* Updated Last.fm login flow – opens popup immediately to avoid blocker */
+async function loginLastfm() {
+    // Open a blank popup first (user‑initiated action)
+    const popup = window.open('', 'lastfm-auth', 'width=600,height=700');
+    if (!popup) {
+        showToast('El navegador bloqueó la ventana emergente. Permite pop‑ups y vuelve a intentarlo.', 'error');
+        return;
+    }
+
     try {
-        // 1. Get Auth URL from backend
+        // 1️⃣ Request auth URL from backend
         const res = await apiCall('/auth/lastfm/login');
-        if (res.auth_url) {
-            // 2. Open Last.fm in a popup
-            const popup = window.open(res.auth_url, 'lastfm-auth', 'width=600,height=700');
-
-            // 3. Listen for the token from the popup
-            window.addEventListener('message', async (event) => {
-                if (event.data.type === 'LASTFM_TOKEN') {
-                    const token = event.data.token;
-
-                    try {
-                        // Exchange token for session/user
-                        const callbackRes = await apiCall(`/auth/lastfm/callback?token=${token}`);
-                        if (callbackRes.status === 'ok' && callbackRes.username) {
-                            // Create/get user in our DB
-                            const authRes = await apiCall('/auth/lastfm', 'POST', { lastfm_username: callbackRes.username });
-                            localStorage.setItem('userId', authRes.user_id);
-                            window.location.href = '/index.html';
-                        }
-                    } catch (e) {
-                        console.error(e);
-                        showToast('Last.fm authentication failed', 'error');
-                    }
-                }
-            }, { once: true });
-        } else {
-            showToast('Failed to get Last.fm login URL', 'error');
+        if (!res.auth_url) {
+            showToast('No se recibió la URL de autorización de Last.fm', 'error');
+            popup.close();
+            return;
         }
+
+        // 2️⃣ Navigate the popup to Last.fm auth page
+        popup.location = res.auth_url;
+
+        // 3️⃣ Listen for token from callback.html (sent via postMessage)
+        const tokenListener = async (event) => {
+            if (event.data?.type === 'LASTFM_TOKEN') {
+                const token = event.data.token;
+                try {
+                    const callbackRes = await apiCall(`/auth/lastfm/callback?token=${token}`);
+                    if (callbackRes.status === 'ok' && callbackRes.username) {
+                        const authRes = await apiCall('/auth/lastfm', 'POST', { lastfm_username: callbackRes.username });
+                        localStorage.setItem('userId', authRes.user_id);
+                        window.location.href = '/index.html';
+                    } else {
+                        showToast('No se pudo obtener el usuario de Last.fm', 'error');
+                    }
+                } catch (e) {
+                    console.error(e);
+                    showToast('Error al completar la autenticación con Last.fm', 'error');
+                } finally {
+                    // Clean‑up
+                    window.removeEventListener('message', tokenListener);
+                    if (!popup.closed) popup.close();
+                }
+            }
+        };
+        window.addEventListener('message', tokenListener, { once: true });
     } catch (e) {
         console.error(e);
-        showToast('Last.fm login error', 'error');
+        showToast('Error al iniciar la autenticación con Last.fm', 'error');
+        if (!popup.closed) popup.close();
     }
 }
+
+// Backward‑compatible alias (in case other code uses the old name)
+const loginLastFm = loginLastfm;
 
 // Handle callback from Last.fm (check URL params on load)
 async function handleLastFmCallback() {
