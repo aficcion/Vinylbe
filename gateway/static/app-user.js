@@ -1276,14 +1276,31 @@ function formatArtistRecommendations(recommendations) {
 }
 
 // Initialize
-document.addEventListener('DOMContentLoaded', () => {
+// Initialize
+document.addEventListener('DOMContentLoaded', async () => {
     initTheme();
-
     handleLastfmCallback();
+
     // If user is logged in, load fresh recommendations from DB
     const userId = localStorage.getItem('userId');
+    const lastfmUsername = localStorage.getItem('lastfm_username'); // Ensure we have this
+
     if (userId) {
-        fetchUserRecommendations(userId);
+        console.log(`🚀 Usuario detectado: ${userId}. Iniciando carga de recomendaciones...`);
+
+        // 1. Try to fetch existing recommendations
+        try {
+            await fetchUserRecommendations(userId);
+
+            // 2. Check if we actually got anything. If not, and we have a username, force generation.
+            const container = document.getElementById('albums-container');
+            if ((!container || container.children.length === 0) && lastfmUsername) {
+                console.log('⚠️ No hay recomendaciones visibles. Forzando generación inicial...');
+                await generateAndSaveRecommendations(userId, lastfmUsername);
+            }
+        } catch (e) {
+            console.error('Error en carga inicial:', e);
+        }
     } else {
         // No user yet, keep any cached recommendations
         checkCachedRecommendations();

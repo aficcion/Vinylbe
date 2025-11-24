@@ -104,8 +104,10 @@ async function loginLastfm() {
                     const authRes = await apiCall('/auth/lastfm', 'POST', { lastfm_username: callbackRes.username });
 
                     localStorage.setItem('userId', authRes.user_id);
+                    // Store username too for generation fallback
+                    if (callbackRes.username) localStorage.setItem('lastfm_username', callbackRes.username);
+
                     console.log('Usuario guardado:', authRes.user_id);
-                    alert(`Usuario conectado: ${authRes.user_id}. Recargando...`);
 
                     if (!popup.closed) popup.close();
                     document.body.removeChild(confirmBtn);
