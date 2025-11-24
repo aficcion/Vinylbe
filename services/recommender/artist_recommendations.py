@@ -6,8 +6,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import httpx
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import sqlite3
 
 MB_BASE = "https://musicbrainz.org/ws/2"
 DISCOGS_BASE = "https://api.discogs.com"
@@ -34,27 +33,75 @@ _last_discogs_call_time = 0.0
 _MIN_DISCOGS_DELAY = 1.5
 _discogs_lock = threading.Lock()
 
+# SQLite database path
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "vinylbe.db")
+
+
+def dict_factory(cursor, row):
+    """Convert SQLite row to dictionary"""
+    d = {}
+    for idx, col in enumerate(cursor.description):
+        d[col[0]] = row[idx]
+    return d
+
+
+def _ensure_schema(conn: sqlite3.Connection) -> None:
+    """Create artists and albums tables if they do not exist."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS artists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            mbid TEXT,
+            image_url TEXT,
+            last_updated TIMESTAMP
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS albums (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            artist_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            year TEXT,
+            discogs_master_id TEXT,
+            discogs_release_id TEXT,
+            rating REAL,
+            votes INTEGER,
+            cover_url TEXT,
+            last_updated TIMESTAMP,
+            FOREIGN KEY (artist_id) REFERENCES artists(id)
+        )
+        """
+    )
+    conn.commit()
+
 
 def _get_db_connection():
-    """Get PostgreSQL connection"""
+    """Get SQLite connection"""
     try:
-        return psycopg2.connect(os.getenv("DATABASE_URL"))
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = dict_factory
+        _ensure_schema(conn)
+        return conn
     except Exception as e:
         print(f"[DB] Connection failed: {e}")
         return None
 
 
 def _get_cached_artist_albums(artist_name: str) -> Optional[List[Dict[str, Any]]]:
-    """Get cached artist albums from PostgreSQL"""
+    """Get cached artist albums from SQLite"""
     conn = _get_db_connection()
     if not conn:
         return None
     
     try:
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor = conn.cursor()
         
         cursor.execute(
-            "SELECT id, mbid, last_updated FROM artists WHERE name = %s",
+            "SELECT id, mbid, last_updated FROM artists WHERE name = ?",
             (artist_name,)
         )
         artist = cursor.fetchone()
@@ -62,7 +109,14 @@ def _get_cached_artist_albums(artist_name: str) -> Optional[List[Dict[str, Any]]
         if not artist:
             return None
         
-        cache_age = datetime.now() - artist["last_updated"]
+        # Parse last_updated timestamp
+        last_updated_str = artist["last_updated"]
+        if isinstance(last_updated_str, str):
+            last_updated = datetime.fromisoformat(last_updated_str)
+        else:
+            last_updated = last_updated_str
+        
+        cache_age = datetime.now() - last_updated
         if cache_age > timedelta(days=CACHE_EXPIRY_DAYS):
             print(f"[DB] Cache for '{artist_name}' is {cache_age.days} days old (expired)")
             return None
@@ -71,8 +125,8 @@ def _get_cached_artist_albums(artist_name: str) -> Optional[List[Dict[str, Any]]
             """SELECT title, year, discogs_master_id, discogs_release_id, 
                       rating, votes, cover_url
                FROM albums 
-               WHERE artist_id = %s 
-               ORDER BY rating DESC NULLS LAST, votes DESC NULLS LAST""",
+               WHERE artist_id = ? 
+               ORDER BY rating DESC, votes DESC""",
             (artist["id"],)
         )
         albums = cursor.fetchall()
@@ -92,39 +146,44 @@ def _get_cached_artist_albums(artist_name: str) -> Optional[List[Dict[str, Any]]
 
 def _save_artist_albums(artist_name: str, mbid: str, albums: List['StudioAlbum'], 
                         image_url: Optional[str] = None):
-    """Save artist and albums to PostgreSQL"""
+    """Save artist and albums to SQLite"""
     conn = _get_db_connection()
     if not conn:
         print(f"[DB] Cannot save '{artist_name}' - no database connection")
         return
     
     try:
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor = conn.cursor()
         
+        # Insert or update artist
         cursor.execute(
-            """INSERT INTO artists (name, mbid, image_url) 
-               VALUES (%s, %s, %s) 
-               ON CONFLICT (name) 
-               DO UPDATE SET mbid = EXCLUDED.mbid, 
-                            image_url = EXCLUDED.image_url,
-                            last_updated = CURRENT_TIMESTAMP
-               RETURNING id""",
-            (artist_name, mbid, image_url)
+            """INSERT INTO artists (name, mbid, image_url, last_updated) 
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(name) DO UPDATE SET 
+                   mbid = excluded.mbid,
+                   image_url = excluded.image_url,
+                   last_updated = excluded.last_updated""",
+            (artist_name, mbid, image_url, datetime.now())
         )
+        
+        # Get artist_id
+        cursor.execute("SELECT id FROM artists WHERE name = ?", (artist_name,))
         result = cursor.fetchone()
         if not result:
             return
         artist_id = result["id"]
         
-        cursor.execute("DELETE FROM albums WHERE artist_id = %s", (artist_id,))
+        # Delete old albums
+        cursor.execute("DELETE FROM albums WHERE artist_id = ?", (artist_id,))
         
+        # Insert new albums
         for album in albums:
             cursor.execute(
                 """INSERT INTO albums (artist_id, title, year, discogs_master_id, 
-                                      discogs_release_id, rating, votes, cover_url)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                                      discogs_release_id, rating, votes, cover_url, last_updated)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (artist_id, album.title, album.year, album.discogs_master_id,
-                 album.discogs_release_id, album.rating, album.votes, album.cover_image)
+                 album.discogs_release_id, album.rating, album.votes, album.cover_image, datetime.now())
             )
         
         conn.commit()

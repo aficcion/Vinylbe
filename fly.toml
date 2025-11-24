@@ -1,0 +1,44 @@
+# Configuración para Fly.io
+app = "vinylbe"
+primary_region = "mad" # Madrid - cambia según tu ubicación
+
+[build]
+  # Usar el Dockerfile existente
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "5000"
+  DISCOGS_SERVICE_URL = "http://localhost:3001"
+  RECOMMENDER_SERVICE_URL = "http://localhost:3002"
+  PRICING_SERVICE_URL = "http://localhost:3003"
+  LASTFM_SERVICE_URL = "http://localhost:3004"
+
+[http_service]
+  internal_port = 5000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/health"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
+
+# Volumen persistente para SQLite
+[mounts]
+  source = "vinylbe_data"
+  destination = "/app/data"
+  initial_size = "1gb"
+
+# Configuración de despliegue
+[deploy]
+  strategy = "rolling"

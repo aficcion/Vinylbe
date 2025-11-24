@@ -34,7 +34,7 @@ def extract_best_image(image_list):
     return ""
 
 
-def fetch_artists(mode: str, limit: int, page: int = 1, country: str | None = None, tag: str | None = None):
+def fetch_artists(mode: str, limit: int, page: int = 1, country: Optional[str] = None, tag: Optional[str] = None):
     """Llama a la API de Last.fm y devuelve la lista de artistas ya normalizada."""
     if not API_KEY:
         raise RuntimeError("No se encontró LASTFM_API_KEY en los secrets/variables de entorno.")

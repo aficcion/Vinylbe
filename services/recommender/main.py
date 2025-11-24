@@ -32,7 +32,6 @@ class ArtistRecommendationRequest(BaseModel):
 
 
 class MergeRecommendationsRequest(BaseModel):
-    spotify_recommendations: List[dict]
     artist_recommendations: List[dict]
     lastfm_recommendations: List[dict] = []
 
@@ -89,9 +88,9 @@ async def lastfm_albums_recommendations(albums: List[dict]):
     cache_misses = 0
     covers_fetched = 0
     
-    def fetch_from_db(artist_name, album_name):
+    def fetch_from_db(artist_name, album_name, mbid=None):
         """Run DB lookup in thread pool to avoid blocking"""
-        return db_utils.get_cached_album(artist_name, album_name)
+        return db_utils.get_cached_album(artist_name, album_name, mbid)
     
     async with httpx.AsyncClient(timeout=5.0) as client:
         with ThreadPoolExecutor(max_workers=3) as executor:
@@ -100,6 +99,7 @@ async def lastfm_albums_recommendations(albums: List[dict]):
             for album_data in albums[:50]:
                 try:
                     album_name = album_data.get("name", "").strip()
+                    mbid = album_data.get("mbid")
                     artist_data = album_data.get("artist", {})
                     
                     if isinstance(artist_data, str):
@@ -113,7 +113,7 @@ async def lastfm_albums_recommendations(albums: List[dict]):
                         continue
                     
                     cached_album = await loop.run_in_executor(
-                        executor, fetch_from_db, artist_name, album_name
+                        executor, fetch_from_db, artist_name, album_name, mbid
                     )
                     
                     if cached_album:
@@ -152,7 +152,7 @@ async def lastfm_albums_recommendations(albums: List[dict]):
                         
                         await loop.run_in_executor(
                             executor, db_utils.create_basic_album_entry,
-                            artist_name, album_name, cover_url
+                            artist_name, album_name, cover_url, mbid
                         )
                         
                         all_recommendations.append({
@@ -403,16 +403,15 @@ async def merge_recommendations(request: MergeRecommendationsRequest):
     import time
     start_time = time.time()
     
-    spotify_recs = request.spotify_recommendations
     artist_recs = request.artist_recommendations
     lastfm_recs = request.lastfm_recommendations
     
     log_event("recommender-service", "INFO", 
-              f"Merging {len(spotify_recs)} Spotify + {len(artist_recs)} artist + {len(lastfm_recs)} Last.fm recommendations")
+              f"Merging {len(artist_recs)} artist + {len(lastfm_recs)} Last.fm recommendations")
     
     seen_albums = set()
     merged: List[dict] = []
-    max_len = max(len(spotify_recs), len(artist_recs), len(lastfm_recs))
+    max_len = max(len(artist_recs), len(lastfm_recs))
     
     def get_album_keys(rec: dict) -> list:
         """Returns all possible keys for this album to handle metadata variations"""
@@ -449,11 +448,6 @@ async def merge_recommendations(request: MergeRecommendationsRequest):
             seen_albums.add(key)
     
     for i in range(max_len):
-        if i < len(spotify_recs):
-            if not is_duplicate(spotify_recs[i]):
-                mark_as_seen(spotify_recs[i])
-                merged.append(spotify_recs[i])
-        
         if i < len(lastfm_recs):
             if not is_duplicate(lastfm_recs[i]):
                 mark_as_seen(lastfm_recs[i])
@@ -464,7 +458,7 @@ async def merge_recommendations(request: MergeRecommendationsRequest):
                 mark_as_seen(artist_recs[i])
                 merged.append(artist_recs[i])
     
-    duplicates_removed = (len(spotify_recs) + len(artist_recs) + len(lastfm_recs)) - len(merged)
+    duplicates_removed = (len(artist_recs) + len(lastfm_recs)) - len(merged)
     elapsed = time.time() - start_time
     log_event("recommender-service", "INFO", 
               f"Merged into {len(merged)} total recommendations ({duplicates_removed} duplicates removed) in {elapsed:.2f}s")

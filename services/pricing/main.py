@@ -1,7 +1,14 @@
+import os
+from dotenv import load_dotenv
+from pathlib import Path as PathLib
+
+# Load environment variables FIRST - use absolute path to .env
+env_path = PathLib(__file__).parent.parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
+
 from fastapi import FastAPI, HTTPException, Path
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-import os
 import sys
 from pathlib import Path as PathLib
 
@@ -18,8 +25,14 @@ pricing_client = None
 async def lifespan(app: FastAPI):
     global pricing_client
     pricing_client = PricingClient()
-    await pricing_client.start()
-    log_event("pricing-service", "INFO", "Pricing Service started")
+    try:
+        await pricing_client.start()
+        log_event("pricing-service", "INFO", "Pricing Service started with eBay connection")
+    except Exception as e:
+        log_event("pricing-service", "ERROR", f"Failed to connect to eBay: {e}")
+        log_event("pricing-service", "WARNING", "Pricing Service started WITHOUT eBay connection")
+        # Continue running even if eBay fails
+    
     yield
     await pricing_client.stop()
     log_event("pricing-service", "INFO", "Pricing Service stopped")

@@ -8,7 +8,7 @@ class AlbumData:
         self.tracks: List[dict] = []
         self.total_score: float = 0
         self.artists: Set[str] = set()
-        self.album_info: dict | None = None
+        self.album_info: Optional[dict] = None
         self.score_by_period: Dict[str, float] = {"short_term": 0, "medium_term": 0, "long_term": 0}
         self.tracks_by_period: Dict[str, int] = {"short_term": 0, "medium_term": 0, "long_term": 0}
 

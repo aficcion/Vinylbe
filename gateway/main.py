@@ -11,20 +11,20 @@ import asyncio
 import time
 import csv
 import json
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional, List, Dict, Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from libs.shared.models import ServiceHealth
 from libs.shared.utils import log_event
+from gateway import db_utils, seeder, db
 
-SPOTIFY_SERVICE_URL = os.getenv("SPOTIFY_SERVICE_URL", "http://localhost:3000")
-DISCOGS_SERVICE_URL = os.getenv("DISCOGS_SERVICE_URL", "http://localhost:3001")
-RECOMMENDER_SERVICE_URL = os.getenv("RECOMMENDER_SERVICE_URL", "http://localhost:3002")
-PRICING_SERVICE_URL = os.getenv("PRICING_SERVICE_URL", "http://localhost:3003")
-LASTFM_SERVICE_URL = os.getenv("LASTFM_SERVICE_URL", "http://localhost:3004")
+DISCOGS_SERVICE_URL = os.getenv("DISCOGS_SERVICE_URL", "http://127.0.0.1:3001")
+RECOMMENDER_SERVICE_URL = os.getenv("RECOMMENDER_SERVICE_URL", "http://127.0.0.1:3002")
+PRICING_SERVICE_URL = os.getenv("PRICING_SERVICE_URL", "http://127.0.0.1:3003")
+LASTFM_SERVICE_URL = os.getenv("LASTFM_SERVICE_URL", "http://127.0.0.1:3004")
 
-http_client: httpx.AsyncClient | None = None
+http_client: Optional[httpx.AsyncClient] = None
 
 
 @asynccontextmanager
@@ -56,6 +56,13 @@ app.mount("/static", StaticFiles(directory=static_path), name="static")
 async def root():
     return FileResponse(static_path / "index.html")
 
+@app.get("/index.html")
+async def index_page():
+    return FileResponse(static_path / "index.html")
+
+@app.get("/callback.html")
+async def callback_page():
+    return FileResponse(static_path / "callback.html")
 
 @app.get("/admin")
 async def admin():
@@ -70,7 +77,6 @@ async def health_check():
     services_health = {}
     
     for service_name, service_url in [
-        ("spotify", SPOTIFY_SERVICE_URL),
         ("discogs", DISCOGS_SERVICE_URL),
         ("recommender", RECOMMENDER_SERVICE_URL),
         ("pricing", PRICING_SERVICE_URL),
@@ -95,38 +101,6 @@ async def health_check():
     }
 
 
-@app.get("/auth/login")
-async def spotify_login():
-    if not http_client:
-        raise HTTPException(status_code=500, detail="HTTP client not initialized")
-    try:
-        resp = await http_client.get(f"{SPOTIFY_SERVICE_URL}/auth/login")
-        return resp.json()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to contact Spotify service: {str(e)}")
-
-
-@app.get("/auth/callback")
-async def spotify_callback(code: str):
-    if not http_client:
-        raise HTTPException(status_code=500, detail="HTTP client not initialized")
-    try:
-        resp = await http_client.get(f"{SPOTIFY_SERVICE_URL}/auth/callback?code={code}")
-        data = resp.json()
-        
-        if data.get("status") == "ok":
-            return RedirectResponse(url="/?auth=success")
-        else:
-            return RedirectResponse(url="/?auth=error")
-    except Exception as e:
-        log_event("gateway", "ERROR", f"Auth callback failed: {str(e)}")
-        return RedirectResponse(url="/?auth=error")
-
-
-@app.get("/spotify/callback")
-async def spotify_callback_alias(code: str):
-    """Alias for /auth/callback to maintain compatibility with configured redirect URIs"""
-    return await spotify_callback(code)
 
 
 @app.get("/auth/lastfm/login")
@@ -162,12 +136,202 @@ async def lastfm_callback(token: str):
         log_event("gateway", "ERROR", f"Last.fm callback failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Callback failed: {str(e)}")
 
+# ---------------------------------------------------------------------------
+# Authentication endpoints using the SQLite persistence layer
+# ---------------------------------------------------------------------------
+
+from pydantic import BaseModel, Field
+
+class GoogleLoginRequest(BaseModel):
+    email: str = Field(..., description="User email from Google OAuth")
+    display_name: str = Field(..., description="User display name from Google")
+    google_sub: str = Field(..., description="Google subject identifier (sub)")
+
+class LastFmLoginRequest(BaseModel):
+    lastfm_username: str = Field(..., description="Last.fm username for login")
+
+class LinkLastFmRequest(BaseModel):
+    user_id: int = Field(..., description="Existing user ID to link Last.fm identity to")
+    lastfm_username: str = Field(..., description="Last.fm username to link")
+
+@app.post("/auth/google")
+async def google_login(request: GoogleLoginRequest):
+    """Create or retrieve a user via Google OAuth credentials."""
+    try:
+        user_id = db.get_or_create_user_via_google(
+            email=request.email,
+            display_name=request.display_name,
+            google_sub=request.google_sub,
+        )
+        return {"user_id": user_id}
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Google login failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Google login error: {str(e)}")
+
+@app.post("/auth/lastfm")
+async def lastfm_login_endpoint(request: LastFmLoginRequest):
+    """Create or retrieve a user via Last.fm username."""
+    try:
+        user_id = db.get_or_create_user_via_lastfm(request.lastfm_username)
+        return {"user_id": user_id}
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Last.fm login failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Last.fm login error: {str(e)}")
+
+@app.post("/auth/lastfm/link")
+async def link_lastfm(request: LinkLastFmRequest):
+    """Link a Last.fm identity to an existing user."""
+    try:
+        db.link_lastfm_to_existing_user(request.user_id, request.lastfm_username)
+        return {"status": "linked", "user_id": request.user_id}
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Link Last.fm failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Link Last.fm error: {str(e)}")
+
+# ---------------------------------------------------------------------------
+# Profile & Artist Management Endpoints
+# ---------------------------------------------------------------------------
+
+class LastFmProfileUpdate(BaseModel):
+    lastfm_username: str
+    top_artists: List[Dict[str, Any]]
+
+class SelectedArtistCreate(BaseModel):
+    artist_name: str
+    mbid: Optional[str] = None
+    source: str = "manual"
+
+@app.get("/users/{user_id}/profile/lastfm")
+async def get_user_profile(user_id: int):
+    """Get the user's Last.fm profile snapshot."""
+    profile = db.get_user_profile_lastfm(user_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return profile
+
+@app.put("/users/{user_id}/profile/lastfm")
+async def update_user_profile(user_id: int, profile: LastFmProfileUpdate):
+    """Update the user's Last.fm profile snapshot."""
+    try:
+        db.upsert_user_profile_lastfm(user_id, profile.lastfm_username, profile.top_artists)
+        return {"status": "updated"}
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Profile update failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Update failed: {str(e)}")
+
+@app.get("/users/{user_id}/selected-artists")
+async def get_selected_artists(user_id: int):
+    """Get all artists selected by the user."""
+    return db.get_user_selected_artists(user_id)
+
+@app.post("/users/{user_id}/selected-artists")
+async def add_selected_artist(user_id: int, artist: SelectedArtistCreate):
+    """Add an artist to the user's selection."""
+    try:
+        db.add_user_selected_artist(user_id, artist.artist_name, artist.mbid, artist.source)
+        return {"status": "added", "artist": artist.artist_name}
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Add artist failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Add artist failed: {str(e)}")
+
+@app.delete("/users/{user_id}/selected-artists/{selection_id}")
+async def remove_selected_artist(user_id: int, selection_id: int):
+    """Remove an artist from the user's selection."""
+    deleted = db.remove_user_selected_artist(user_id, selection_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Selection not found")
+    return {"status": "removed"}
+
+# ---------------------------------------------------------------------------
+# Recommendation Endpoints
+# ---------------------------------------------------------------------------
+
+class RecommendationStatusUpdate(BaseModel):
+    new_status: str
+
+class RegenerateRecommendationsRequest(BaseModel):
+    new_recs: List[Dict[str, Any]]
+
+@app.get("/users/{user_id}/recommendations")
+async def get_recommendations(user_id: int, include_favorites: bool = True):
+    """Get recommendations for the user."""
+    return db.get_recommendations_for_user(user_id, include_favorites)
+
+@app.get("/users/{user_id}/recommendations/favorites")
+async def get_favorites(user_id: int):
+    """Get only favorite recommendations."""
+    return db.get_favorite_recommendations(user_id)
+
+@app.patch("/users/{user_id}/recommendations/{rec_id}")
+async def update_recommendation_status(user_id: int, rec_id: int, update: RecommendationStatusUpdate):
+    """Update the status of a recommendation (favorite, disliked, owned, neutral)."""
+    try:
+        db.update_recommendation_status(user_id, rec_id, update.new_status)
+        return {"status": "updated", "new_status": update.new_status}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Update status failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Update failed: {str(e)}")
+
+@app.post("/users/{user_id}/recommendations/regenerate")
+async def regenerate_recommendations_endpoint(user_id: int, request: RegenerateRecommendationsRequest):
+    """Regenerate recommendations based on new data."""
+    try:
+        db.regenerate_recommendations(user_id, request.new_recs)
+        return {"status": "regenerated"}
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Regenerate failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Regenerate failed: {str(e)}")
+
 
 @app.get("/lastfm/callback")
 async def lastfm_callback_alias(token: str):
     """Alias for /auth/lastfm/callback to maintain compatibility with configured redirect URIs"""
     return await lastfm_callback(token)
 
+# ---------------------------------------------------------------------------
+# API aliases for frontend compatibility (prefixed with /api)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/users/{user_id}/recommendations")
+async def api_get_recommendations(user_id: int, include_favorites: bool = True):
+    """Alias that forwards to the core /users/{user_id}/recommendations endpoint.
+    This fixes 404 errors when the frontend calls the /api-prefixed path.
+    """
+    return await get_recommendations(user_id, include_favorites)
+
+@app.get("/api/users/{user_id}/recommendations/favorites")
+async def api_get_favorites(user_id: int):
+    """Alias for favorite recommendations under /api prefix."""
+    return await get_favorites(user_id)
+
+@app.get("/api/users/{user_id}/profile/lastfm")
+async def api_get_user_profile(user_id: int):
+    """Alias for Last.fm profile under /api prefix."""
+    return await get_user_profile(user_id)
+
+@app.put("/api/users/{user_id}/profile/lastfm")
+async def api_update_user_profile(user_id: int, profile: LastFmProfileUpdate):
+    """Alias for Last.fm profile update under /api prefix."""
+    return await update_user_profile(user_id, profile)
+
+@app.get("/api/users/{user_id}/selected-artists")
+async def api_get_selected_artists(user_id: int):
+    """Alias for getting selected artists under /api prefix."""
+    return await get_selected_artists(user_id)
+
+@app.post("/api/users/{user_id}/selected-artists")
+async def api_add_selected_artist(user_id: int, artist: SelectedArtistCreate):
+    """Alias for adding selected artist under /api prefix."""
+    return await add_selected_artist(user_id, artist)
+
+@app.delete("/api/users/{user_id}/selected-artists/{selection_id}")
+async def api_remove_selected_artist(user_id: int, selection_id: int):
+    """Alias for removing selected artist under /api prefix."""
+    return await remove_selected_artist(user_id, selection_id)
 
 @app.get("/album-pricing/{artist}/{album}")
 async def get_album_pricing(artist: str, album: str):
@@ -486,69 +650,6 @@ async def enrich_album_with_discogs(album: dict, idx: int, total: int, semaphore
         return album
 
 
-@app.get("/recommend-vinyl")
-async def recommend_vinyl():
-    if not http_client:
-        raise HTTPException(status_code=500, detail="HTTP client not initialized")
-    
-    start_time = time.time()
-    log_event("gateway", "INFO", "Starting vinyl recommendation flow")
-    
-    try:
-        log_event("gateway", "INFO", "Step 1: Fetching top tracks from Spotify")
-        tracks_resp = await http_client.get(f"{SPOTIFY_SERVICE_URL}/top-tracks")
-        tracks_data = tracks_resp.json()
-        all_tracks = tracks_data.get("tracks", [])
-        log_event("gateway", "INFO", f"Fetched {len(all_tracks)} tracks")
-        
-        log_event("gateway", "INFO", "Step 2: Fetching top artists from Spotify")
-        artists_resp = await http_client.get(f"{SPOTIFY_SERVICE_URL}/top-artists")
-        artists_data = artists_resp.json()
-        all_artists = artists_data.get("artists", [])
-        log_event("gateway", "INFO", f"Fetched {len(all_artists)} artists")
-        
-        log_event("gateway", "INFO", "Step 3: Scoring tracks")
-        scored_tracks_resp = await http_client.post(
-            f"{RECOMMENDER_SERVICE_URL}/score-tracks",
-            json=all_tracks
-        )
-        scored_tracks = scored_tracks_resp.json().get("scored_tracks", [])
-        log_event("gateway", "INFO", f"Scored {len(scored_tracks)} tracks")
-        
-        log_event("gateway", "INFO", "Step 4: Scoring artists")
-        scored_artists_resp = await http_client.post(
-            f"{RECOMMENDER_SERVICE_URL}/score-artists",
-            json=all_artists
-        )
-        scored_artists = scored_artists_resp.json().get("scored_artists", [])
-        log_event("gateway", "INFO", f"Scored {len(scored_artists)} artists")
-        
-        log_event("gateway", "INFO", "Step 5: Aggregating and filtering albums")
-        albums_resp = await http_client.post(
-            f"{RECOMMENDER_SERVICE_URL}/aggregate-albums",
-            json={"scored_tracks": scored_tracks, "scored_artists": scored_artists}
-        )
-        albums = albums_resp.json().get("albums", [])
-        log_event("gateway", "INFO", f"Generated {len(albums)} album recommendations")
-        
-        end_time = time.time()
-        total_time = end_time - start_time
-        log_event("gateway", "INFO", f"Recommendation flow complete: {len(albums)} albums in {total_time:.2f}s")
-        
-        return {
-            "albums": albums,
-            "total": len(albums),
-            "total_time_seconds": round(total_time, 2),
-            "stats": {
-                "tracks_analyzed": len(all_tracks),
-                "artists_analyzed": len(all_artists),
-                "albums_found": len(albums)
-            }
-        }
-    
-    except Exception as e:
-        log_event("gateway", "ERROR", f"Recommendation flow failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Recommendation failed: {str(e)}")
 
 
 @app.get("/api/lastfm/search")
@@ -701,7 +802,6 @@ async def get_artist_recommendations(request: dict):
         raise HTTPException(status_code=500, detail="HTTP client not initialized")
     
     artist_names = request.get("artist_names", [])
-    spotify_token = request.get("spotify_token")
     
     if not artist_names:
         raise HTTPException(status_code=400, detail="artist_names is required")
@@ -723,43 +823,9 @@ async def get_artist_recommendations(request: dict):
         artist_recs = artist_recs_resp.json().get("recommendations", [])
         log_event("gateway", "INFO", f"Got {len(artist_recs)} artist-based recommendations")
         
-        spotify_recs = []
-        if spotify_token:
-            try:
-                log_event("gateway", "INFO", "Fetching Spotify recommendations")
-                
-                tracks_resp, artists_resp = await asyncio.gather(
-                    http_client.get(f"{SPOTIFY_SERVICE_URL}/top-tracks"),
-                    http_client.get(f"{SPOTIFY_SERVICE_URL}/top-artists")
-                )
-                
-                tracks_data = tracks_resp.json()
-                all_tracks = tracks_data.get("tracks", [])
-                
-                artists_data = artists_resp.json()
-                all_artists = artists_data.get("artists", [])
-                
-                scored_tracks_resp, scored_artists_resp = await asyncio.gather(
-                    http_client.post(f"{RECOMMENDER_SERVICE_URL}/score-tracks", json=all_tracks),
-                    http_client.post(f"{RECOMMENDER_SERVICE_URL}/score-artists", json=all_artists)
-                )
-                
-                scored_tracks = scored_tracks_resp.json().get("scored_tracks", [])
-                scored_artists = scored_artists_resp.json().get("scored_artists", [])
-                
-                albums_resp = await http_client.post(
-                    f"{RECOMMENDER_SERVICE_URL}/aggregate-albums",
-                    json={"scored_tracks": scored_tracks, "scored_artists": scored_artists}
-                )
-                spotify_recs = albums_resp.json().get("albums", [])
-                log_event("gateway", "INFO", f"Got {len(spotify_recs)} Spotify recommendations")
-            except Exception as e:
-                log_event("gateway", "WARNING", f"Failed to get Spotify recommendations: {str(e)}")
-        
         merge_resp = await http_client.post(
             f"{RECOMMENDER_SERVICE_URL}/merge-recommendations",
             json={
-                "spotify_recommendations": spotify_recs,
                 "artist_recommendations": artist_recs
             }
         )
@@ -775,7 +841,6 @@ async def get_artist_recommendations(request: dict):
             "total_time_seconds": round(total_time, 2),
             "stats": {
                 "artist_based": len(artist_recs),
-                "spotify_based": len(spotify_recs),
                 "total": len(merged)
             }
         }
@@ -791,17 +856,15 @@ async def merge_recommendations(request: dict):
         raise HTTPException(status_code=500, detail="HTTP client not initialized")
     
     try:
-        spotify_recs = request.get("spotify_recommendations", [])
         lastfm_recs = request.get("lastfm_recommendations", [])
         artist_recs = request.get("artist_recommendations", [])
         
         log_event("gateway", "INFO", 
-                  f"Merging {len(spotify_recs)} Spotify + {len(lastfm_recs)} Last.fm + {len(artist_recs)} artist recommendations")
+                  f"Merging {len(lastfm_recs)} Last.fm + {len(artist_recs)} artist recommendations")
         
         response = await http_client.post(
             f"{RECOMMENDER_SERVICE_URL}/merge-recommendations",
             json={
-                "spotify_recommendations": spotify_recs,
                 "lastfm_recommendations": lastfm_recs,
                 "artist_recommendations": artist_recs
             }
@@ -814,6 +877,51 @@ async def merge_recommendations(request: dict):
     except Exception as e:
         log_event("gateway", "ERROR", f"Merge recommendations failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Merge failed: {str(e)}")
+
+
+
+@app.get("/api/admin/explorer/search")
+async def admin_search(q: str = "", type: str = "all", limit: int = 50, offset: int = 0):
+    """Search for artists, albums or both in the database"""
+    results = {}
+    
+    if type in ["artist", "all"]:
+        if q:
+            artists = db_utils.search_artists(q)
+        else:
+            artists = db_utils.get_all_artists(limit, offset)
+        results["artists"] = artists
+        
+    if type in ["album", "all"]:
+        if q:
+            albums = db_utils.search_albums(q)
+        else:
+            albums = db_utils.get_all_albums(limit, offset)
+        results["albums"] = albums
+        
+    return results
+
+
+
+@app.post("/api/admin/explorer/update/{entity_type}/{entity_id}")
+async def admin_update_entity(entity_type: str, entity_id: int, data: Dict[str, Any] = {}):
+    """Update an entity by syncing with external sources (MusicBrainz/Discogs)"""
+    
+    if entity_type == "artist":
+        result = await seeder.sync_artist(entity_id)
+        if result["status"] == "error":
+            raise HTTPException(status_code=500, detail=result["message"])
+        return result
+        
+    elif entity_type == "album":
+        result = await seeder.sync_album(entity_id)
+        if result["status"] == "error":
+            raise HTTPException(status_code=500, detail=result["message"])
+        return result
+        
+    else:
+        raise HTTPException(status_code=400, detail="Invalid entity type")
+
 
 
 @app.post("/api/admin/import-csv")

@@ -260,8 +260,8 @@ async def _get_genres_from_lastfm(artist_name: str) -> List[str]:
 async def search_artists(q: str = Query(..., min_length=2)):
     """Search artists via Discogs, clean names, deduplicate, fetch Last.fm genres"""
     try:
-        discogs_key = os.getenv("DISCOGS_CONSUMER_KEY")
-        discogs_secret = os.getenv("DISCOGS_CONSUMER_SECRET")
+        discogs_key = os.getenv("DISCOGS_CONSUMER_KEY") or os.getenv("DISCOGS_KEY")
+        discogs_secret = os.getenv("DISCOGS_CONSUMER_SECRET") or os.getenv("DISCOGS_SECRET")
         
         if not discogs_key or not discogs_secret:
             raise HTTPException(status_code=500, detail="Discogs credentials not configured")

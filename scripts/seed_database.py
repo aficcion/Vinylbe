@@ -1,8 +1,7 @@
 import json
 import os
 import time
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import sqlite3
 import httpx
 import re
 from typing import Optional, Dict, Any, List, Tuple
@@ -11,8 +10,10 @@ MB_BASE = "https://musicbrainz.org/ws/2"
 DISCOGS_BASE = "https://api.discogs.com"
 HEADERS = {"User-Agent": "VinylRecommendationSystem/1.0"}
 
-DISCOGS_KEY = os.getenv("DISCOGS_CONSUMER_KEY", "")
-DISCOGS_SECRET = os.getenv("DISCOGS_CONSUMER_SECRET", "")
+DISCOGS_KEY = os.getenv("DISCOGS_CONSUMER_KEY", "") or os.getenv("DISCOGS_KEY", "")
+DISCOGS_SECRET = os.getenv("DISCOGS_CONSUMER_SECRET", "") or os.getenv("DISCOGS_SECRET", "")
+
+DB_PATH = "vinylbe.db"
 
 _RE_DISCOGS_MASTER = re.compile(
     r"https?://(?:www\.)?discogs\.com/(?:[a-z]{2}/)?master/(\d+)", re.I
@@ -26,11 +27,57 @@ CLIENT = httpx.Client(
     follow_redirects=True,
 )
 
+def dict_factory(cursor, row):
+    d = {}
+    for idx, col in enumerate(cursor.description):
+        d[col[0]] = row[idx]
+    return d
 
 def get_db_connection():
-    """Get PostgreSQL connection"""
-    return psycopg2.connect(os.getenv("DATABASE_URL"))
+    """Get SQLite connection"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = dict_factory
+    return conn
 
+def create_tables():
+    """Create necessary tables if they don't exist"""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        
+        # Artists table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS artists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                mbid TEXT,
+                image_url TEXT,
+                last_updated TIMESTAMP
+            )
+        """)
+        
+        # Albums table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS albums (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                artist_id INTEGER,
+                title TEXT NOT NULL,
+                year TEXT,
+                discogs_master_id TEXT,
+                discogs_release_id TEXT,
+                rating REAL,
+                votes INTEGER,
+                cover_url TEXT,
+                last_updated TIMESTAMP,
+                FOREIGN KEY(artist_id) REFERENCES artists(id),
+                UNIQUE(artist_id, title, year)
+            )
+        """)
+        
+        conn.commit()
+        print("✓ Tables created/verified")
+    finally:
+        conn.close()
 
 def _mb_get(path: str, params: Dict[str, Any], tries: int = 5,
             sleep_after_ok: float = 1.0) -> Dict[str, Any]:
@@ -198,13 +245,13 @@ def seed_artist(artist_name: str):
     conn = get_db_connection()
     
     try:
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor = conn.cursor()
         
         print(f"\n{'='*60}")
         print(f"Processing: {artist_name}")
         print(f"{'='*60}")
         
-        cursor.execute("SELECT id FROM artists WHERE name = %s", (artist_name,))
+        cursor.execute("SELECT id FROM artists WHERE name = ?", (artist_name,))
         existing = cursor.fetchone()
         if existing:
             print(f"✓ Artist '{artist_name}' already exists in database (ID: {existing['id']}), skipping...")
@@ -228,10 +275,10 @@ def seed_artist(artist_name: str):
         
         print(f"[4/4] Saving to database...")
         cursor.execute(
-            "INSERT INTO artists (name, mbid, image_url) VALUES (%s, %s, %s) RETURNING id",
+            "INSERT INTO artists (name, mbid, image_url) VALUES (?, ?, ?)",
             (artist_name, mbid, image_url)
         )
-        artist_id = cursor.fetchone()["id"]
+        artist_id = cursor.lastrowid
         print(f"✓ Artist saved (ID: {artist_id})")
         
         albums_saved = 0
@@ -245,9 +292,8 @@ def seed_artist(artist_name: str):
                     print(f"    ✓ Rating: {rating:.1f}/5 ({votes} votes)")
             
             cursor.execute(
-                """INSERT INTO albums (artist_id, title, year, discogs_master_id, rating, votes, cover_url) 
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)
-                   ON CONFLICT (artist_id, title, year) DO NOTHING""",
+                """INSERT OR IGNORE INTO albums (artist_id, title, year, discogs_master_id, rating, votes, cover_url) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (artist_id, album["title"], album["year"], album["discogs_master_id"], rating, votes, cover_url)
             )
             albums_saved += 1
@@ -263,11 +309,13 @@ def seed_artist(artist_name: str):
 def main():
     """Main seeding function"""
     print("\n" + "="*60)
-    print("VINYL RECOMMENDATION SYSTEM - DATABASE SEEDER")
+    print("VINYL RECOMMENDATION SYSTEM - DATABASE SEEDER (SQLite)")
     print("="*60 + "\n")
     
+    create_tables()
+    
     if not DISCOGS_KEY or not DISCOGS_SECRET:
-        print("✗ ERROR: DISCOGS_CONSUMER_KEY and DISCOGS_CONSUMER_SECRET environment variables must be set")
+        print("⚠ WARNING: DISCOGS_CONSUMER_KEY and DISCOGS_CONSUMER_SECRET not set. Tables created but seeding skipped.")
         return
     
     with open("seed_artists.json", "r") as f:

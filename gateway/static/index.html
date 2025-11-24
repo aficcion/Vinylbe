@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -227,8 +228,13 @@
         }
 
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
 
         .hidden {
@@ -352,7 +358,7 @@
 
         .album-card:hover {
             transform: translateY(-4px);
-            box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
         }
 
         .album-cover {
@@ -422,7 +428,7 @@
         .detail-cover-section img {
             width: 100%;
             border-radius: 12px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
         }
 
         .detail-info-section h1 {
@@ -559,7 +565,7 @@
             padding-left: 1rem;
             white-space: nowrap;
         }
-        
+
         .info-message {
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
@@ -569,13 +575,13 @@
             font-size: 0.9rem;
             margin: 1rem 0;
         }
-        
+
         .info-message.warning {
             background: #fff3cd;
             border-color: #ffc107;
             color: #856404;
         }
-        
+
         [data-theme="dark"] .info-message.warning {
             background: #332701;
             border-color: #664d03;
@@ -611,7 +617,8 @@
             transform: translateX(4px);
         }
 
-        .no-pricing, .error-text {
+        .no-pricing,
+        .error-text {
             text-align: center;
             color: var(--text-secondary);
             padding: 3rem 2rem;
@@ -622,7 +629,7 @@
             .albums-grid {
                 grid-template-columns: repeat(3, 1fr);
             }
-            
+
             .detail-content {
                 grid-template-columns: 1fr;
                 gap: 2rem;
@@ -771,6 +778,7 @@
                 transform: translateY(-100%);
                 opacity: 0;
             }
+
             to {
                 transform: translateY(0);
                 opacity: 1;
@@ -801,8 +809,15 @@
         }
 
         @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.1); }
+
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
         }
 
         .progress-banner-title h2 {
@@ -841,18 +856,22 @@
 
         .progress-bar.indeterminate {
             width: 100%;
-            background: linear-gradient(90deg, 
-                var(--bg-secondary) 0%, 
-                #1DB954 50%, 
-                var(--bg-secondary) 100%
-            );
+            background: linear-gradient(90deg,
+                    var(--bg-secondary) 0%,
+                    #1DB954 50%,
+                    var(--bg-secondary) 100%);
             background-size: 200% 100%;
             animation: indeterminateProgress 1.5s ease-in-out infinite;
         }
 
         @keyframes indeterminateProgress {
-            0% { background-position: 200% 0; }
-            100% { background-position: -200% 0; }
+            0% {
+                background-position: 200% 0;
+            }
+
+            100% {
+                background-position: -200% 0;
+            }
         }
 
         .progress-bar::after {
@@ -862,18 +881,21 @@
             left: 0;
             bottom: 0;
             right: 0;
-            background: linear-gradient(
-                90deg,
-                transparent,
-                rgba(255, 255, 255, 0.3),
-                transparent
-            );
+            background: linear-gradient(90deg,
+                    transparent,
+                    rgba(255, 255, 255, 0.3),
+                    transparent);
             animation: shimmer 2s infinite;
         }
 
         @keyframes shimmer {
-            0% { transform: translateX(-100%); }
-            100% { transform: translateX(100%); }
+            0% {
+                transform: translateX(-100%);
+            }
+
+            100% {
+                transform: translateX(100%);
+            }
         }
 
         .progress-percentage {
@@ -898,8 +920,243 @@
             color: var(--text-secondary);
             font-size: 0.85rem;
         }
+
+        /* Album Actions Overlay */
+        .album-cover {
+            position: relative;
+            overflow: hidden;
+            width: 100%;
+            aspect-ratio: 1;
+            /* Force square aspect ratio */
+            background-color: #f0f0f0;
+            /* Fallback background */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .album-cover img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .album-actions {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            padding: 1.5rem 0.5rem 0.5rem;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.3s ease;
+        }
+
+        .album-card:hover .album-actions {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .action-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: white;
+            font-size: 1.1rem;
+            backdrop-filter: blur(4px);
+            transition: all 0.2s ease;
+        }
+
+        .action-btn:hover {
+            background: rgba(255, 255, 255, 0.4);
+            transform: scale(1.1);
+        }
+
+        .action-btn.active {
+            background: var(--accent-color);
+            color: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .action-btn.favorite.active {
+            background: #FFD700;
+            /* Gold for favorites */
+            color: #333;
+        }
+
+        .action-btn.disliked.active {
+            background: #ff4444;
+        }
+
+        .action-btn.owned.active {
+            background: #1DB954;
+        }
+
+        /* Sidebar Styles */
+        .recommendations-layout {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 2rem;
+            align-items: start;
+        }
+
+        .sidebar {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            position: sticky;
+            top: 2rem;
+            max-height: calc(100vh - 4rem);
+            overflow-y: auto;
+        }
+
+        .sidebar h3 {
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+
+        .sidebar-section {
+            margin-bottom: 2rem;
+        }
+
+        .sidebar-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .artist-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .artist-list li {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.9rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .artist-list li:last-child {
+            border-bottom: none;
+        }
+
+        .artist-playcount {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+        }
+
+        .add-artist-btn {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .add-artist-btn:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        /* Album Card Action Buttons */
+        .album-card {
+            position: relative;
+        }
+
+        .album-actions {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            display: flex;
+            gap: 0.25rem;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .album-card:hover .album-actions {
+            opacity: 1;
+        }
+
+        .action-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            backdrop-filter: blur(4px);
+        }
+
+        .action-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .action-btn.favorite {
+            background: rgba(255, 215, 0, 0.9);
+        }
+
+        .action-btn.favorite.active {
+            background: #FFD700;
+        }
+
+        .action-btn.owned {
+            background: rgba(34, 197, 94, 0.9);
+        }
+
+        .action-btn.owned.active {
+            background: #22c55e;
+        }
+
+        .action-btn.disliked {
+            background: rgba(239, 68, 68, 0.9);
+        }
+
+        .action-btn.disliked.active {
+            background: #ef4444;
+        }
+
+        .album-card.hidden-card {
+            display: none;
+        }
+
+        @media (max-width: 1024px) {
+            .recommendations-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: relative;
+                top: 0;
+                max-height: none;
+            }
+        }
     </style>
 </head>
+
 <body>
     <div class="header">
         <div class="logo">Vinilogy</div>
@@ -909,22 +1166,18 @@
     <div id="landing-view">
         <div class="hero">
             <h1>Descubre Vinilos Basados en tu Música</h1>
-            <p>Conecta tu Spotify, Last.fm o busca tus artistas favoritos para encontrar recomendaciones de vinilos personalizadas</p>
+            <p>Conecta tu Last.fm o busca tus artistas favoritos para encontrar recomendaciones de vinilos
+                personalizadas</p>
             <div class="connection-buttons">
-                <button class="spotify-btn" onclick="loginSpotify()">
-                    <svg class="spotify-icon" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
-                    </svg>
-                    Conectar con Spotify
-                </button>
+
                 <button class="lastfm-btn" onclick="loginLastfm()">
                     <span style="font-size: 1.3em;">🎵</span>
                     Conectar con Last.fm
                 </button>
             </div>
-            
+
             <div class="options-divider">o</div>
-            
+
             <button class="search-artists-btn" onclick="openArtistSearch()">
                 🔍 Buscar artistas
             </button>
@@ -939,7 +1192,7 @@
             <div class="feature-card">
                 <div class="feature-icon">🎵</div>
                 <h3>Personalizado</h3>
-                <p>Recomendaciones basadas en tu historial de escucha de Spotify</p>
+                <p>Recomendaciones basadas en tu historial de escucha</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">💿</div>
@@ -962,35 +1215,55 @@
                     <p id="last-updated">Basado en tu escucha</p>
                 </div>
                 <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-                    <button id="spotify-connect-btn" class="spotify-btn-small" onclick="loginSpotify()" style="display: none;">
-                        <svg class="spotify-icon" viewBox="0 0 24 24" fill="white">
-                            <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
-                        </svg>
-                        Conectar Spotify
+                    <button id="lastfm-header-btn" class="spotify-btn-small" onclick="loginLastfm()"
+                        style="display: none; background: linear-gradient(135deg, #1DB954 0%, #1ed760 100%); box-shadow: 0 2px 8px rgba(29, 185, 84, 0.3);">
+                        🎵 Conectar Last.fm
                     </button>
-                    <button id="artist-search-header-btn" class="spotify-btn-small" onclick="openArtistSearch()" style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);">
+                    <button id="artist-search-header-btn" class="spotify-btn-small" onclick="openArtistSearch()"
+                        style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);">
                         🔍 Buscar artistas
                     </button>
                 </div>
             </div>
         </div>
-        
+
         <div class="filter-bar">
             <button class="filter-btn active" data-filter="all" onclick="filterRecommendations('all')">
                 Todas
             </button>
-            <button class="filter-btn" data-filter="spotify" onclick="filterRecommendations('spotify')">
-                Spotify
+            <button class="filter-btn" data-filter="favorites" onclick="filterRecommendations('favorites')">
+                ★ Favoritos
             </button>
-            <button class="filter-btn" data-filter="lastfm" onclick="filterRecommendations('lastfm')" style="display: none;">
+            <button class="filter-btn" data-filter="lastfm" onclick="filterRecommendations('lastfm')"
+                style="display: none;">
                 Last.fm
             </button>
             <button class="filter-btn" data-filter="artists" onclick="filterRecommendations('artists')">
                 Artistas
             </button>
         </div>
-        
-        <div class="albums-grid" id="albums-container">
+
+        <div class="recommendations-layout">
+            <aside class="sidebar" id="profile-sidebar">
+                <div class="sidebar-section" id="lastfm-artists-section" style="display: none;">
+                    <h3>🎵 Top Artists (Last.fm)</h3>
+                    <ul class="artist-list" id="lastfm-artists-list"></ul>
+                </div>
+
+                <div class="sidebar-section" id="selected-artists-section" style="display: none;">
+                    <h3>🎸 Artistas Seleccionados</h3>
+                    <ul class="artist-list" id="selected-artists-list"></ul>
+                    <button class="add-artist-btn" onclick="openArtistSearch()">+ Añadir Artista</button>
+                </div>
+
+                <div class="sidebar-section" id="sidebar-placeholder"
+                    style="text-align: center; color: var(--text-secondary); padding: 2rem 0;">
+                    <p>Conecta Last.fm o busca artistas para ver tu perfil aquí</p>
+                </div>
+            </aside>
+
+            <div class="albums-grid" id="albums-container">
+            </div>
         </div>
     </div>
 
@@ -999,16 +1272,16 @@
             <button class="back-button" onclick="backToRecommendations()">
                 ← Volver a recomendaciones
             </button>
-            
+
             <div class="detail-content">
                 <div class="detail-cover-section">
                     <img id="detail-cover" src="" alt="Album cover">
                 </div>
-                
+
                 <div class="detail-info-section">
                     <h1 id="detail-title"></h1>
                     <p class="detail-artist" id="detail-artist"></p>
-                    
+
                     <div id="detail-pricing">
                     </div>
                 </div>
@@ -1036,7 +1309,7 @@
                     <span id="progress-time-estimate" class="progress-time-text"></span>
                 </div>
             </div>
-            
+
             <div style="display: flex; align-items: center; gap: 1rem;">
                 <div class="progress-bar-container">
                     <div class="progress-bar" id="progress-bar"></div>
@@ -1046,7 +1319,9 @@
         </div>
     </div>
 
-    <script src="/static/artist-search.js"></script>
-    <script src="/static/app-user.js"></script>
+    <script src="/static/artist-search.js?v=1763926372"></script>
+    <script src="/static/app-user-ext.js?v=1763977108"></script>
+    <script src="/static/app-user.js?v=1763981403"></script>
 </body>
+
 </html>

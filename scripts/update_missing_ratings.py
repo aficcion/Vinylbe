@@ -1,7 +1,6 @@
 import os
 import time
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import sqlite3
 import httpx
 from typing import Optional, Tuple
 
@@ -20,9 +19,20 @@ CLIENT = httpx.Client(
 )
 
 
+def dict_factory(cursor, row):
+    """Convert SQLite row to dictionary"""
+    d = {}
+    for idx, col in enumerate(cursor.description):
+        d[col[0]] = row[idx]
+    return d
+
+
 def get_db_connection():
-    """Get PostgreSQL connection"""
-    return psycopg2.connect(os.getenv("DATABASE_URL"))
+    """Get SQLite connection"""
+    db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "vinylbe.db")
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = dict_factory
+    return conn
 
 
 def _discogs_get(path: str, params: dict, tries: int = 5):
@@ -107,7 +117,7 @@ def main():
         return
     
     conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor = conn.cursor()
     
     # Get albums without rating
     cursor.execute("""
@@ -142,8 +152,8 @@ def main():
             if rating is not None:
                 cursor.execute("""
                     UPDATE albums 
-                    SET rating = %s, votes = %s, cover_url = COALESCE(cover_url, %s)
-                    WHERE id = %s
+                    SET rating = ?, votes = ?, cover_url = COALESCE(cover_url, ?)
+                    WHERE id = ?
                 """, (rating, votes, cover_url, album['id']))
                 conn.commit()
                 print(f"  ✓ Rating: {rating:.2f}/5 ({votes} votos)")

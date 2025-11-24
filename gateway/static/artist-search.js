@@ -4,22 +4,22 @@ class ArtistSearch {
         this.options = {
             minArtists: options.minArtists || 3,
             maxArtists: options.maxArtists || 10,
-            onSelectionChange: options.onSelectionChange || (() => {}),
+            onSelectionChange: options.onSelectionChange || (() => { }),
             onContinue: options.onContinue || null,
             ...options
         };
-        
+
         this.selectedArtists = [];
         this.searchResults = [];
         this.searchTimeout = null;
         this.recommendationsCache = {};
         this.loadingArtists = new Set();
         this.pendingPromises = new Map();
-        
+
         this.render();
         this.attachEventListeners();
     }
-    
+
     render() {
         this.container.innerHTML = `
             <div class="artist-search-modal">
@@ -59,25 +59,25 @@ class ArtistSearch {
             </div>
         `;
     }
-    
+
     attachEventListeners() {
         const searchInput = document.getElementById('artist-search-input');
         const clearBtn = document.getElementById('clear-search-btn');
         const continueBtn = document.getElementById('continue-btn');
-        
+
         searchInput.addEventListener('input', (e) => {
             const query = e.target.value.trim();
-            
+
             if (query.length > 0) {
                 clearBtn.style.display = 'block';
             } else {
                 clearBtn.style.display = 'none';
             }
-            
+
             if (this.searchTimeout) {
                 clearTimeout(this.searchTimeout);
             }
-            
+
             if (query.length >= 4) {
                 this.searchTimeout = setTimeout(() => {
                     this.performSearch(query);
@@ -86,7 +86,7 @@ class ArtistSearch {
                 this.clearSearchResults();
             }
         });
-        
+
         if (clearBtn) {
             clearBtn.addEventListener('click', () => {
                 searchInput.value = '';
@@ -94,7 +94,7 @@ class ArtistSearch {
                 this.clearSearchResults();
             });
         }
-        
+
         if (continueBtn) {
             continueBtn.addEventListener('click', async () => {
                 if (this.options.onContinue && this.isValidSelection()) {
@@ -103,15 +103,15 @@ class ArtistSearch {
             });
         }
     }
-    
+
     async performSearch(query) {
         const resultsGrid = document.getElementById('search-results-grid');
         resultsGrid.innerHTML = '<div class="loading">Buscando...</div>';
-        
+
         try {
             const response = await fetch(`/api/lastfm/search?q=${encodeURIComponent(query)}`);
             const data = await response.json();
-            
+
             this.searchResults = data.artists || [];
             this.renderSearchResults();
         } catch (error) {
@@ -119,35 +119,35 @@ class ArtistSearch {
             resultsGrid.innerHTML = '<div class="error">Error al buscar artistas</div>';
         }
     }
-    
+
     renderSearchResults() {
         const resultsGrid = document.getElementById('search-results-grid');
-        
+
         if (this.searchResults.length === 0) {
             resultsGrid.innerHTML = '<div class="no-results">No se encontraron artistas</div>';
             return;
         }
-        
+
         resultsGrid.innerHTML = this.searchResults.map(artist => {
             const isSelected = this.selectedArtists.some(a => a.name === artist.name);
             const isDisabled = !isSelected && this.selectedArtists.length >= this.options.maxArtists;
-            
+
             return `
                 <div class="artist-card ${isSelected ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}" 
                      data-artist-name="${artist.name}">
                     <div class="artist-card-content">
                         <div class="artist-image-wrapper">
-                            ${artist.image_url 
-                                ? `<img src="${artist.image_url}" alt="${artist.name}" class="artist-image" />`
-                                : `<div class="artist-image-placeholder">🎵</div>`
-                            }
+                            ${artist.image_url
+                    ? `<img src="${artist.image_url}" alt="${artist.name}" class="artist-image" />`
+                    : `<div class="artist-image-placeholder">🎵</div>`
+                }
                         </div>
                         <div class="artist-info">
                             <div class="artist-name">${artist.name}</div>
-                            ${artist.genres && artist.genres.length > 0 
-                                ? `<div class="artist-genres">${artist.genres.join(', ')}</div>`
-                                : ''
-                            }
+                            ${artist.genres && artist.genres.length > 0
+                    ? `<div class="artist-genres">${artist.genres.join(', ')}</div>`
+                    : ''
+                }
                         </div>
                     </div>
                     <button class="add-artist-btn ${isSelected ? 'added' : ''}" 
@@ -158,19 +158,19 @@ class ArtistSearch {
                 </div>
             `;
         }).join('');
-        
+
         this.attachArtistCardListeners();
     }
-    
+
     attachArtistCardListeners() {
         const addButtons = document.querySelectorAll('.add-artist-btn');
-        
+
         addButtons.forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const artist = JSON.parse(btn.dataset.artist);
                 const isSelected = this.selectedArtists.some(a => a.name === artist.name);
-                
+
                 if (isSelected) {
                     this.removeArtist(artist.name);
                 } else if (this.selectedArtists.length < this.options.maxArtists) {
@@ -179,17 +179,17 @@ class ArtistSearch {
             });
         });
     }
-    
+
     async addArtist(artist) {
         if (this.selectedArtists.length >= this.options.maxArtists) {
             return;
         }
-        
+
         if (!this.selectedArtists.some(a => a.name === artist.name)) {
             this.selectedArtists.push(artist);
             this.loadingArtists.add(artist.name);
             this.updateUI();
-            
+
             const fetchPromise = (async () => {
                 try {
                     const response = await fetch('/api/recommendations/artist-single', {
@@ -197,7 +197,7 @@ class ArtistSearch {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ artist_name: artist.name, top_albums: 3 })
                     });
-                    
+
                     if (response.ok) {
                         const data = await response.json();
                         const recs = data.recommendations || [];
@@ -238,11 +238,11 @@ class ArtistSearch {
                     this.updateUI();
                 }
             })();
-            
+
             this.pendingPromises.set(artist.name, fetchPromise);
         }
     }
-    
+
     removeArtist(artistName) {
         this.selectedArtists = this.selectedArtists.filter(a => a.name !== artistName);
         delete this.recommendationsCache[artistName];
@@ -251,18 +251,18 @@ class ArtistSearch {
         console.log(`✗ Removed ${artistName} and its cached recommendations`);
         this.updateUI();
     }
-    
+
     async waitForAllPendingRecommendations() {
         if (this.pendingPromises.size === 0) {
             return;
         }
-        
+
         console.log(`⏳ Waiting for ${this.pendingPromises.size} pending recommendations to complete...`);
         const allPromises = Array.from(this.pendingPromises.values());
         await Promise.allSettled(allPromises);
         console.log('✓ All pending recommendations completed');
     }
-    
+
     updateUI() {
         this.renderSelectedArtists();
         this.renderSearchResults();
@@ -270,27 +270,27 @@ class ArtistSearch {
         this.updateContinueButton();
         this.options.onSelectionChange(this.selectedArtists);
     }
-    
+
     renderSelectedArtists() {
         const pillsContainer = document.getElementById('selected-artists-pills');
-        
+
         if (this.selectedArtists.length === 0) {
             pillsContainer.innerHTML = '<div class="no-selection">Aún no has seleccionado artistas</div>';
             return;
         }
-        
+
         pillsContainer.innerHTML = this.selectedArtists.map(artist => {
             const isLoading = this.loadingArtists.has(artist.name);
             const cached = this.recommendationsCache[artist.name];
             const hasSuccess = cached && cached.status === 'success';
             const hasError = cached && cached.status === 'error';
-            
+
             return `
                 <div class="artist-pill ${isLoading ? 'loading' : ''} ${hasSuccess ? 'cached' : ''} ${hasError ? 'error' : ''}">
-                    ${artist.image_url 
-                        ? `<img src="${artist.image_url}" alt="${artist.name}" class="pill-image" />`
-                        : ''
-                    }
+                    ${artist.image_url
+                    ? `<img src="${artist.image_url}" alt="${artist.name}" class="pill-image" />`
+                    : ''
+                }
                     <span class="pill-name">${artist.name}</span>
                     ${isLoading ? '<span class="pill-spinner">⏳</span>' : ''}
                     ${!isLoading && hasSuccess ? '<span class="pill-check">✓</span>' : ''}
@@ -299,7 +299,7 @@ class ArtistSearch {
                 </div>
             `;
         }).join('');
-        
+
         const removeButtons = pillsContainer.querySelectorAll('.pill-remove-btn');
         removeButtons.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -307,21 +307,21 @@ class ArtistSearch {
             });
         });
     }
-    
+
     updateCounter() {
         const counter = document.getElementById('artist-counter');
         if (counter) {
             counter.textContent = `${this.selectedArtists.length}/${this.options.maxArtists} seleccionados`;
         }
     }
-    
+
     updateContinueButton() {
         const continueBtn = document.getElementById('continue-btn');
         if (continueBtn) {
             const isValid = this.isValidSelection();
             const isLoading = this.loadingArtists.size > 0;
             continueBtn.disabled = !isValid || isLoading;
-            
+
             if (isLoading && isValid) {
                 continueBtn.textContent = `Cargando ${this.loadingArtists.size}...`;
             } else {
@@ -329,33 +329,33 @@ class ArtistSearch {
             }
         }
     }
-    
+
     isValidSelection() {
-        return this.selectedArtists.length >= this.options.minArtists && 
-               this.selectedArtists.length <= this.options.maxArtists;
+        return this.selectedArtists.length >= this.options.minArtists &&
+            this.selectedArtists.length <= this.options.maxArtists;
     }
-    
+
     clearSearchResults() {
         const resultsGrid = document.getElementById('search-results-grid');
         resultsGrid.innerHTML = '';
         this.searchResults = [];
     }
-    
+
     getSelectedArtists() {
         return this.selectedArtists;
     }
-    
+
     setSelectedArtists(artists) {
         this.selectedArtists = artists;
         this.updateUI();
     }
-    
+
     async restoreArtists(artistNames) {
         console.log(`🔄 Restoring ${artistNames.length} artists:`, artistNames);
-        
+
         const fetchAndAddArtist = async (name) => {
             try {
-                const response = await fetch(`/api/lastfm/artist/search?query=${encodeURIComponent(name)}&limit=1`);
+                const response = await fetch(`/api/lastfm/search?q=${encodeURIComponent(name)}`);
                 if (response.ok) {
                     const data = await response.json();
                     if (data.artists && data.artists.length > 0) {
@@ -376,17 +376,17 @@ class ArtistSearch {
                 return { success: false, name, reason: error.message };
             }
         };
-        
+
         const results = await Promise.all(artistNames.map(fetchAndAddArtist));
         const successful = results.filter(r => r.success).length;
         const failed = results.filter(r => !r.success);
-        
+
         console.log(`✓ Restored ${successful}/${artistNames.length} artists successfully`);
         if (failed.length > 0) {
             console.warn(`⚠ Failed to restore ${failed.length} artists:`, failed);
         }
     }
-    
+
     getCachedRecommendations() {
         const allRecommendations = [];
         for (const artistName of this.selectedArtists.map(a => a.name)) {
@@ -397,7 +397,7 @@ class ArtistSearch {
         }
         return allRecommendations;
     }
-    
+
     isLoadingComplete() {
         if (this.loadingArtists.size > 0) {
             return false;
@@ -407,7 +407,7 @@ class ArtistSearch {
             return cached !== undefined;
         });
     }
-    
+
     hasAllSuccessful() {
         if (this.selectedArtists.length === 0) {
             return false;
@@ -417,18 +417,18 @@ class ArtistSearch {
             return cached && cached.status === 'success';
         });
     }
-    
+
     getLoadingStatus() {
         const successCount = this.selectedArtists.filter(artist => {
             const cached = this.recommendationsCache[artist.name];
             return cached && cached.status === 'success';
         }).length;
-        
+
         const errorCount = this.selectedArtists.filter(artist => {
             const cached = this.recommendationsCache[artist.name];
             return cached && cached.status === 'error';
         }).length;
-        
+
         return {
             total: this.selectedArtists.length,
             success: successCount,

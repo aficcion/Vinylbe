@@ -1,0 +1,242 @@
+Fetching https://api.discogs.com/masters/25721...
+Status: 200
+{
+  "id": 25721,
+  "main_release": 441171,
+  "most_recent_release": 34509316,
+  "resource_url": "https://api.discogs.com/masters/25721",
+  "uri": "https://www.discogs.com/master/25721-ABBA-The-Album",
+  "versions_url": "https://api.discogs.com/masters/25721/versions",
+  "main_release_url": "https://api.discogs.com/releases/441171",
+  "most_recent_release_url": "https://api.discogs.com/releases/34509316",
+  "num_for_sale": 2788,
+  "lowest_price": 0.66,
+  "images": [
+    {
+      "type": "primary",
+      "uri": "",
+      "resource_url": "",
+      "uri150": "",
+      "width": 600,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "",
+      "resource_url": "",
+      "uri150": "",
+      "width": 600,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "",
+      "resource_url": "",
+      "uri150": "",
+      "width": 595,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "",
+      "resource_url": "",
+      "uri150": "",
+      "width": 588,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "",
+      "resource_url": "",
+      "uri150": "",
+      "width": 600,
+      "height": 590
+    },
+    {
+      "type": "secondary",
+      "uri": "",
+      "resource_url": "",
+      "uri150": "",
+      "width": 600,
+      "height": 590
+    }
+  ],
+  "genres": [
+    "Electronic",
+    "Rock",
+    "Pop",
+    "Stage & Screen"
+  ],
+  "styles": [
+    "Disco",
+    "Europop",
+    "Pop Rock",
+    "Vocal",
+    "Soundtrack",
+    "Soft Rock",
+    "Ballad",
+    "Schlager"
+  ],
+  "year": 1977,
+  "tracklist": [
+    {
+      "position": "A1",
+      "type_": "track",
+      "title": "Eagle",
+      "extraartists": [
+        {
+          "name": "Ola Brunkert",
+          "anv": "",
+          "join": "",
+          "role": "Drums",
+          "tracks": "",
+          "id": 322343,
+          "resource_url": "https://api.discogs.com/artists/322343"
+        },
+        {
+          "name": "Janne Schaffer",
+          "anv": "",
+          "join": "",
+          "role": "Lead Guitar",
+          "tracks": "",
+          "id": 319679,
+          "resource_url": "https://api.discogs.com/artists/319679"
+        }
+      ],
+      "duration": "5:51"
+    },
+    {
+      "position": "A2",
+      "type_": "track",
+      "title": "Take A Chance On Me",
+      "extraartists": [
+        {
+          "name": "Roger Palm",
+          "anv": "",
+          "join": "",
+          "role": "Drums",
+          "tracks": "",
+          "id": 322342,
+          "resource_url": "https://api.discogs.com/artists/322342"
+        }
+      ],
+      "duration": "4:05"
+    },
+    {
+      "position": "A3",
+      "type_": "track",
+      "title": "One Man, One Woman",
+      "extraartists": [
+        {
+          "name": "Roger Palm",
+          "anv": "",
+          "join": "",
+          "role": "Drums",
+          "tracks": "",
+          "id": 322342,
+          "resource_url": "https://api.discogs.com/artists/322342"
+        }
+      ],
+      "duration": "4:25"
+    },
+    {
+      "position": "A4",
+      "type_": "track",
+      "title": "The Name Of The Game",
+      "extraartists": [
+        {
+          "name": "Ola Brunkert",
+          "anv": "",
+          "join": "",
+          "role": "Drums",
+          "tracks": "",
+          "id": 322343,
+          "resource_url": "https://api.discogs.com/artists/322343"
+        },
+        {
+          "name": "Stig Anderson",
+          "anv": "",
+          "join": "",
+          "role": "Lyrics By [Help]",
+          "tracks": "",
+          "id": 69875,
+          "resource_url": "https://api.discogs.com/artists/69875"
+        }
+      ],
+      "duration": "4:54"
+    },
+    {
+      "position": "B1",
+      "type_": "track",
+      "title": "Move On",
+      "extraartists": [
+        {
+          "name": "Stig Anderson",
+          "anv": "",
+          "join": "",
+          "role": "Lyrics By [Help]",
+          "tracks": "",
+          "id": 69875,
+          "resource_url": "https://api.discogs.com/artists/69875"
+        }
+      ],
+      "duration": "4:42"
+    },
+    {
+      "position": "B2",
+      "type_": "track",
+      "title": "Hole In Your Soul",
+      "extraartists": [
+        {
+          "name": "Ola Brunkert",
+          "anv": "",
+          "join": "",
+          "role": "Drums",
+          "tracks": "",
+          "id": 322343,
+          "resource_url": "https://api.discogs.com/artists/322343"
+        }
+      ],
+      "duration": "3:41"
+    },
+    {
+      "position": "",
+      "type_": "index",
+      "title": "\"The Girl With The Golden Hair\" \u2013 3 Scenes From A Mini-Musical \u2013",
+      "duration": "",
+      "sub_tracks": [
+        {
+          "position": "B3-A",
+          "type_": "track",
+          "title": "Thank You For The Music",
+          "duration": "3:48"
+        },
+        {
+          "position": "B3-B",
+          "type_": "track",
+          "title": "I Wonder (Departure)",
+          "duration": "4:33"
+        },
+        {
+          "position": "B3-C",
+          "type_": "track",
+          "title": "I'm A Marionette",
+          "duration": "3:54"
+        }
+      ]
+    }
+  ],
+  "artists": [
+    {
+      "name": "ABBA",
+      "anv": "",
+      "join": "",
+      "role": "",
+      "tracks": "",
+      "id": 69866,
+      "resource_url": "https://api.discogs.com/artists/69866"
+    }
+  ],
+  "title": "The Album",
+  "data_quality": "Correct"
+}

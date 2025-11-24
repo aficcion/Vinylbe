@@ -1,0 +1,40 @@
+services:
+  # Gateway principal que sirve el frontend y coordina los microservicios
+  - type: web
+    name: vinylbe-gateway
+    env: python
+    region: frankfurt
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python start_services.py
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: DISCOGS_SERVICE_URL
+        value: http://localhost:3001
+      - key: RECOMMENDER_SERVICE_URL
+        value: http://localhost:3002
+      - key: PRICING_SERVICE_URL
+        value: http://localhost:3003
+      - key: LASTFM_SERVICE_URL
+        value: http://localhost:3004
+      # Estas deben configurarse como secretas en el panel de Render
+      - key: DISCOGS_API_KEY
+        sync: false
+      - key: DISCOGS_API_SECRET
+        sync: false
+      - key: LASTFM_API_KEY
+        sync: false
+      - key: LASTFM_API_SECRET
+        sync: false
+      - key: EBAY_APP_ID
+        sync: false
+      - key: EBAY_CERT_ID
+        sync: false
+
+databases:
+  # Disco persistente para SQLite
+  - name: vinylbe-data
+    databaseName: vinylbe
+    plan: free

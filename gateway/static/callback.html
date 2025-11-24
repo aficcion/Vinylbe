@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Authenticating...</title>
+</head>
+
+<body>
+    <p>Authenticating with Last.fm...</p>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get('token');
+        if (token) {
+            if (window.opener) {
+                window.opener.postMessage({ type: 'LASTFM_TOKEN', token: token }, '*');
+                window.close();
+            } else {
+                // Fallback if not a popup
+                window.location.href = '/index.html?token=' + token;
+            }
+        } else {
+            document.body.innerHTML = '<p style="color:red">Authentication failed. No token received.</p>';
+        }
+    </script>
+</body>
+
+</html>
