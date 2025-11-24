@@ -1,6 +1,9 @@
 // Theme Management
 const hasLastfm = true; // Last.fm integration enabled
 
+// Global state for album statuses (favorite, owned, disliked)
+const albumStatuses = new Map();
+
 function initTheme() {
     const savedTheme = localStorage.getItem('theme') || 'light';
     document.documentElement.setAttribute('data-theme', savedTheme);

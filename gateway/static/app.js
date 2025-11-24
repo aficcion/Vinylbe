@@ -300,7 +300,12 @@ async function loadRecommendations(includeFav = true) {
 }
 
 function renderRecommendations(recs) {
-    const container = document.getElementById('recs-container');
+    const container = document.getElementById('albums-container');
+    if (!container) {
+        console.error('albums-container not found in DOM');
+        return;
+    }
+
     container.innerHTML = '';
 
     if (recs.length === 0) {
