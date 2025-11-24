@@ -299,38 +299,7 @@ async function loadRecommendations(includeFav = true) {
     renderRecommendations(recs);
 }
 
-function renderRecommendations(recs) {
-    const container = document.getElementById('albums-container');
-    if (!container) {
-        console.error('albums-container not found in DOM');
-        return;
-    }
-
-    container.innerHTML = '';
-
-    if (recs.length === 0) {
-        container.innerHTML = '<p style="grid-column: 1/-1; text-align: center; padding: 2rem;">No recommendations yet. Try regenerating.</p>';
-        return;
-    }
-
-    recs.forEach(r => {
-        const card = document.createElement('div');
-        card.className = `card rec-card ${r.status === 'favorite' ? 'fav-selected' : ''} ${r.status === 'disliked' ? 'disliked' : ''} ${r.status === 'owned' ? 'owned' : ''}`;
-        card.dataset.id = r.id;
-
-        card.innerHTML = `
-            <h3>${r.artist_name}</h3>
-            <p style="font-size: 1rem; color: #fff; margin-bottom: 0.5rem;">${r.album_title}</p>
-            <p>Source: ${r.source}</p>
-            <div class="actions">
-                <button class="btn-sm ${r.status === 'favorite' ? 'active-fav' : ''}" onclick="updateRecStatus(${r.id}, 'favorite')">★</button>
-                <button class="btn-sm ${r.status === 'disliked' ? 'active-dislike' : ''}" onclick="updateRecStatus(${r.id}, 'disliked')">✖</button>
-                <button class="btn-sm ${r.status === 'owned' ? 'active-owned' : ''}" onclick="updateRecStatus(${r.id}, 'owned')">✅</button>
-            </div>
-        `;
-        container.appendChild(card);
-    });
-}
+// renderRecommendations is defined in app-user.js - don't duplicate it here
 
 async function updateRecStatus(recId, newStatus) {
     const uid = getUserId();
