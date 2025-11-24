@@ -90,39 +90,44 @@ async function loginLastfm() {
         confirmBtn.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10000;padding:20px 40px;background:#d51007;color:white;border:none;border-radius:12px;font-size:18px;font-weight:bold;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,0.5);';
 
         confirmBtn.onclick = async () => {
+            console.log('Verificando token manualmente:', res.token);
             confirmBtn.disabled = true;
             confirmBtn.textContent = 'Verificando...';
 
             try {
                 // Manually check the token
                 const callbackRes = await apiCall(`/auth/lastfm/callback?token=${res.token}`);
+                console.log('Respuesta callback:', callbackRes);
+
                 if (callbackRes.status === 'ok' && callbackRes.username) {
+                    console.log('Autenticación exitosa, creando usuario...');
                     const authRes = await apiCall('/auth/lastfm', 'POST', { lastfm_username: callbackRes.username });
+
                     localStorage.setItem('userId', authRes.user_id);
+                    console.log('Usuario guardado:', authRes.user_id);
+
                     if (!popup.closed) popup.close();
                     document.body.removeChild(confirmBtn);
                     window.location.href = '/index.html';
                 } else {
-                    throw new Error('Auth failed');
+                    throw new Error('La respuesta del servidor no fue OK');
                 }
             } catch (e) {
+                console.error('Error en verificación manual:', e);
                 confirmBtn.disabled = false;
+                confirmBtn.style.backgroundColor = '#dc3545'; // Rojo error
                 confirmBtn.textContent = '❌ No detectado. Reintentar';
-                setTimeout(() => confirmBtn.textContent = '✅ Ya autoricé en Last.fm', 2000);
+                setTimeout(() => {
+                    confirmBtn.textContent = '✅ Ya autoricé en Last.fm';
+                    confirmBtn.style.backgroundColor = '#d51007'; // Rojo original
+                }, 3000);
             }
         };
 
         document.body.appendChild(confirmBtn);
 
-        // 5. Keep the automatic listener just in case it DOES work
-        window.addEventListener('message', async (event) => {
-            if (event.data?.type === 'LASTFM_TOKEN') {
-                if (document.body.contains(confirmBtn)) document.body.removeChild(confirmBtn);
-                // The existing listener logic would handle the rest if we hadn't duplicated logic, 
-                // but simpler to just trigger the button click logic programmatically or reload.
-                window.location.reload();
-            }
-        }, { once: true });
+        // Eliminamos el listener automático para evitar conflictos
+        // window.addEventListener('message', ... ); 
 
     } catch (e) {
         console.error(e);
