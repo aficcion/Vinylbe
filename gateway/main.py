@@ -976,7 +976,7 @@ async def import_artists_csv(file: UploadFile = File(...)):
                     start_time = time.time()
                     
                     response = await http_client.post(
-                        f"{RECOMMENDER_SERVICE_URL}/artist-single-recommendation",
+                        f"{RECOMMENDER_SERVICE_URL}/artist-recommendations",
                         json={"artist_name": artist_name, "top_albums": 10, "csv_mode": True},
                         timeout=180.0
                     )
