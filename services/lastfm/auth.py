@@ -10,13 +10,7 @@ class LastFMAuthManager:
         self.api_key = os.getenv("LASTFM_API_KEY")
         self.api_secret = os.getenv("LASTFM_API_SECRET")
         
-        replit_domain = os.getenv("REPLIT_DEV_DOMAIN")
-        if replit_domain:
-            default_redirect = f"https://{replit_domain}/lastfm/callback"
-        else:
-            default_redirect = "http://127.0.0.1:5000/callback.html"
-        
-        self.redirect_uri = os.getenv("LASTFM_REDIRECT_URI", default_redirect)
+        self.redirect_uri = os.getenv("LASTFM_CALLBACK_URL", os.getenv("LASTFM_REDIRECT_URI", "http://127.0.0.1:5000/callback.html"))
         self.api_base = "http://ws.audioscrobbler.com/2.0/"
         self.auth_url_base = "http://www.last.fm/api/auth"
         self.session_key = None
