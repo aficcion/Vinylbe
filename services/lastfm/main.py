@@ -204,10 +204,18 @@ async def get_top_artists(request: TimeRangeRequest):
 
 @app.post("/top-albums")
 async def get_top_albums(request: TimeRangeRequest):
-    if request.username not in lastfm_clients:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
-    client = lastfm_clients[request.username]
+    client = lastfm_clients.get(request.username)
+    if not client:
+        # Fallback: Create a new client on the fly (Stateless mode)
+        # This is crucial for serverless environments (Railway) where memory is not persistent across requests/restarts
+        api_key = os.getenv("LASTFM_API_KEY")
+        if not api_key:
+             raise HTTPException(status_code=500, detail="LASTFM_API_KEY not configured")
+        
+        client = LastFMClient(api_key, request.username)
+        await client.start()
+        lastfm_clients[request.username] = client
+        log_event("lastfm-service", "INFO", f"Created new client for {request.username} (stateless fallback)")
     
     period_map = {
         "short_term": "7day",
