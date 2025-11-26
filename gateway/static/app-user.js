@@ -1,4 +1,21 @@
-// Theme Management
+(async () => {
+    const uid = localStorage.getItem('userId');
+    if (uid) {
+        try {
+            const resp = await fetch(`/api/users/${uid}`);
+            if (!resp.ok) {
+                console.warn(`Usuario ${uid} no encontrado → limpiando localStorage`);
+                localStorage.removeItem('userId');
+                localStorage.removeItem('lastfm_username');
+                // Recargar para iniciar flujo de creación de usuario
+                location.reload();
+            }
+        } catch (e) {
+            console.error('Error verificando usuario al iniciar:', e);
+        }
+    }
+})();
+
 const hasLastfm = true; // Last.fm integration enabled
 
 function initTheme() {
@@ -1022,6 +1039,7 @@ let artistSearchComponent = null;
 async function openArtistSearch() {
     const modal = document.getElementById('artist-search-modal');
     modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
 
     if (!artistSearchComponent) {
         artistSearchComponent = new ArtistSearch('artist-search-container', {
@@ -1051,6 +1069,7 @@ async function openArtistSearch() {
 function closeArtistSearch() {
     const modal = document.getElementById('artist-search-modal');
     modal.classList.remove('active');
+    document.body.style.overflow = '';
 }
 
 async function handleArtistSelection(selectedArtists) {
