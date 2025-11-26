@@ -1077,3 +1077,67 @@ async def import_artists_csv(file: UploadFile = File(...)):
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
     
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoints for database management
+# ---------------------------------------------------------------------------
+
+@app.get("/api/admin/db/download")
+async def download_database():
+    """Download the current database file for backup purposes."""
+    db_path = Path(__file__).parent.parent / "vinylbe.db"
+    
+    if not db_path.exists():
+        raise HTTPException(status_code=404, detail="Database file not found")
+    
+    log_event("gateway", "INFO", "Database download requested")
+    return FileResponse(
+        path=str(db_path),
+        filename="vinylbe.db",
+        media_type="application/octet-stream"
+    )
+
+
+@app.post("/api/admin/db/upload")
+async def upload_database(database: UploadFile = File(...)):
+    """Upload and replace the production database. USE WITH CAUTION!"""
+    db_path = Path(__file__).parent.parent / "vinylbe.db"
+    backup_path = Path(__file__).parent.parent / f"vinylbe.db.backup.{int(time.time())}"
+    
+    try:
+        # Create backup of current database
+        if db_path.exists():
+            import shutil
+            shutil.copy2(db_path, backup_path)
+            log_event("gateway", "INFO", f"Created database backup: {backup_path.name}")
+        
+        # Write uploaded file
+        content = await database.read()
+        
+        # Validate it's a SQLite database
+        if not content.startswith(b'SQLite format 3'):
+            raise HTTPException(status_code=400, detail="Invalid SQLite database file")
+        
+        with open(db_path, "wb") as f:
+            f.write(content)
+        
+        log_event("gateway", "INFO", f"Database updated successfully (size: {len(content)} bytes)")
+        
+        return {
+            "status": "success",
+            "message": "Database updated successfully",
+            "backup_created": backup_path.name,
+            "size_bytes": len(content)
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Database upload failed: {str(e)}")
+        # Restore from backup if it exists
+        if backup_path.exists():
+            import shutil
+            shutil.copy2(backup_path, db_path)
+            log_event("gateway", "INFO", "Restored database from backup after failed upload")
+        raise HTTPException(status_code=500, detail=f"Database upload failed: {str(e)}")
