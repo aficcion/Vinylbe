@@ -98,7 +98,7 @@ class ArtistSearch {
         if (continueBtn) {
             continueBtn.addEventListener('click', async () => {
                 if (this.options.onContinue && this.isValidSelection()) {
-                    await this.options.onContinue(this.selectedArtists);
+                    await this.options.onContinue(this.selectedArtists, this);
                 }
             });
         }

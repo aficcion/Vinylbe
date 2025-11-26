@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Conectar con Last.fm</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .container {
+            text-align: center;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            max-width: 500px;
+            width: 90%;
+        }
+
+        h1 {
+            margin: 0 0 1rem;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        p {
+            margin: 0 0 1.5rem;
+            opacity: 0.9;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+            box-sizing: border-box;
+        }
+
+        input::placeholder {
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        button {
+            padding: 0.75rem 1.5rem;
+            background: white;
+            color: #667eea;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.95rem;
+            transition: transform 0.2s;
+            width: 100%;
+        }
+
+        button:hover {
+            transform: scale(1.05);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .steps {
+            text-align: left;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+        }
+
+        .steps ol {
+            margin: 0;
+            padding-left: 1.5rem;
+        }
+
+        .steps li {
+            margin-bottom: 0.5rem;
+        }
+
+        .error {
+            background: rgba(239, 68, 68, 0.2);
+            padding: 0.75rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            color: #fca5a5;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Conectar con Last.fm</h1>
+
+        <div class="steps">
+            <p style="margin-bottom: 0.5rem; font-weight: 600;">Instrucciones:</p>
+            <ol>
+                <li>Haz clic en "Abrir Last.fm" para autorizar la aplicación</li>
+                <li>En Last.fm, haz clic en "Yes, allow access"</li>
+                <li>Copia la URL completa de la página de Last.fm</li>
+                <li>Pégala aquí abajo y haz clic en "Conectar"</li>
+            </ol>
+        </div>
+
+        <button onclick="openLastfm()" id="openBtn">Abrir Last.fm</button>
+
+        <div style="margin: 1.5rem 0;">
+            <input type="text" id="urlInput" placeholder="Pega aquí la URL de Last.fm después de autorizar..." disabled>
+            <button onclick="processUrl()" id="connectBtn" disabled>Conectar</button>
+        </div>
+
+        <div id="error" class="error" style="display: none;"></div>
+    </div>
+
+    <script>
+        let authUrl = null;
+
+        async function openLastfm() {
+            try {
+                const response = await fetch('/auth/lastfm/login');
+                const data = await response.json();
+
+                if (data.auth_url) {
+                    authUrl = data.auth_url;
+                    window.open(data.auth_url, '_blank');
+
+                    // Enable input and button
+                    document.getElementById('urlInput').disabled = false;
+                    document.getElementById('connectBtn').disabled = false;
+                    document.getElementById('openBtn').textContent = 'Abrir Last.fm de nuevo';
+                }
+            } catch (error) {
+                showError('Error al conectar con Last.fm. Por favor, intenta de nuevo.');
+            }
+        }
+
+        async function processUrl() {
+            const url = document.getElementById('urlInput').value.trim();
+
+            if (!url) {
+                showError('Por favor, pega la URL de Last.fm');
+                return;
+            }
+
+            // Extract token from URL
+            const tokenMatch = url.match(/[?&]token=([^&]+)/);
+            if (!tokenMatch) {
+                showError('URL inválida. Asegúrate de copiar la URL completa de Last.fm después de autorizar.');
+                return;
+            }
+
+            const token = tokenMatch[1];
+
+            try {
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('connectBtn').textContent = 'Conectando...';
+
+                const response = await fetch(`/auth/lastfm/callback?token=${token}`);
+                const data = await response.json();
+
+                if (response.ok && data.status === 'ok' && data.username) {
+                    // Save to localStorage
+                    localStorage.setItem('lastfm_username', data.username);
+                    localStorage.setItem('has_lastfm_connected', 'true');
+                    localStorage.setItem('vinilogy_lastfm_auth_completed', 'true');
+
+                    // Create/get user in database
+                    try {
+                        const authRes = await fetch('/auth/lastfm', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ lastfm_username: data.username })
+                        });
+                        const authData = await authRes.json();
+                        if (authData.user_id) {
+                            localStorage.setItem('userId', authData.user_id);
+                        }
+                    } catch (e) {
+                        console.error('Error creating user:', e);
+                    }
+
+                    // Redirect to main app
+                    window.location.href = '/';
+                } else {
+                    showError('No se pudo autenticar con Last.fm. Por favor, intenta de nuevo.');
+                    document.getElementById('connectBtn').disabled = false;
+                    document.getElementById('connectBtn').textContent = 'Conectar';
+                }
+            } catch (error) {
+                showError('Error de conexión. Por favor, intenta de nuevo.');
+                document.getElementById('connectBtn').disabled = false;
+                document.getElementById('connectBtn').textContent = 'Conectar';
+            }
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        // Allow Enter key to submit
+        document.getElementById('urlInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                processUrl();
+            }
+        });
+    </script>
+</body>
+
+</html>

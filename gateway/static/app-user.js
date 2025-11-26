@@ -31,47 +31,19 @@ function toggleTheme() {
 }
 
 
-// Last.fm Authentication
+// Last.fm Authentication - Simplified redirect flow
 async function loginLastfm() {
     try {
         const response = await fetch('/auth/lastfm/login');
         const data = await response.json();
 
         if (data.auth_url && data.token) {
+            // Save token and set auth pending flag
             localStorage.setItem('vinilogy_lastfm_token', data.token);
+            localStorage.setItem('vinilogy_lastfm_auth_pending', 'true');
 
-            const popupWindow = window.open(data.auth_url, 'Last.fm Auth', 'width=800,height=600');
-
-            const confirmBtn = document.createElement('button');
-            confirmBtn.textContent = 'Ya autoricé en Last.fm';
-            confirmBtn.className = 'lastfm-confirm-btn';
-            confirmBtn.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10000;padding:20px 40px;background:#d51007;color:white;border:none;border-radius:12px;font-size:18px;font-weight:bold;cursor:pointer;box-shadow:0 8px 24px rgba(213,16,7,0.4);transition:all 0.3s;';
-            confirmBtn.onmouseover = () => {
-                confirmBtn.style.transform = 'translate(-50%,-50%) scale(1.05)';
-                confirmBtn.style.boxShadow = '0 12px 32px rgba(213,16,7,0.5)';
-            };
-            confirmBtn.onmouseout = () => {
-                confirmBtn.style.transform = 'translate(-50%,-50%) scale(1)';
-                confirmBtn.style.boxShadow = '0 8px 24px rgba(213,16,7,0.4)';
-            };
-            confirmBtn.onclick = async () => {
-                confirmBtn.disabled = true;
-                confirmBtn.textContent = 'Conectando...';
-
-                const success = await completeLastfmAuth(data.token);
-
-                if (success) {
-                    document.body.removeChild(confirmBtn);
-                    if (popupWindow && !popupWindow.closed) {
-                        popupWindow.close();
-                    }
-                } else {
-                    confirmBtn.disabled = false;
-                    confirmBtn.textContent = 'Reintentar';
-                }
-            };
-
-            document.body.appendChild(confirmBtn);
+            // Redirect to Last.fm in the same window
+            window.location.href = data.auth_url;
         }
     } catch (error) {
         console.error('Error initiating Last.fm login:', error);
@@ -79,53 +51,27 @@ async function loginLastfm() {
     }
 }
 
-async function completeLastfmAuth(token) {
-    showLoading(true, 'Esperando confirmación de Last.fm (5 segundos)...');
+// Check if we just returned from Last.fm authentication
+function checkLastfmAuthReturn() {
+    const authCompleted = localStorage.getItem('vinilogy_lastfm_auth_completed');
+    const lastfmUsername = localStorage.getItem('lastfm_username');
 
-    try {
-        await new Promise(resolve => setTimeout(resolve, 5000));
+    if (authCompleted === 'true' && lastfmUsername) {
+        // Clear the flag
+        localStorage.removeItem('vinilogy_lastfm_auth_completed');
 
-        const response = await fetch(`/auth/lastfm/callback?token=${token}`);
-        const data = await response.json();
+        console.log('✓ Returned from Last.fm authentication:', lastfmUsername);
 
-        if (response.ok && data.status === 'ok' && data.username) {
-            localStorage.setItem('lastfm_username', data.username);
-            localStorage.setItem('has_lastfm_connected', 'true');
-            localStorage.removeItem('vinilogy_lastfm_token');
-
-            // Create/get user in database and store userId
-            try {
-                const authRes = await fetch('/auth/lastfm', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ lastfm_username: data.username })
-                });
-                const authData = await authRes.json();
-                if (authData.user_id) {
-                    localStorage.setItem('userId', authData.user_id);
-                    console.log('✓ User created/retrieved:', authData.user_id);
-                }
-            } catch (e) {
-                console.error('Error creating user:', e);
-            }
-
-            // After login, fetch fresh recommendations from DB
-            const userId = localStorage.getItem('userId');
-            if (userId) {
-                await fetchUserRecommendations(userId);
-            }
-
-            return true;
-        } else {
-            showLoading(false);
-            alert(`❌ Error: No se pudo conectar con Last.fm.\n\n✅ Pasos a seguir:\n1. Asegúrate de hacer clic en "YES, ALLOW ACCESS" en la ventana de Last.fm\n2. Espera a que veas "Application authenticated"\n3. ESPERA 5-10 segundos más\n4. Luego haz clic en "Ya autoricé en Last.fm"`);
-            return false;
+        // Show success message
+        if (typeof showToast === 'function') {
+            showToast(`¡Conectado con Last.fm como ${lastfmUsername}!`, 'success');
         }
-    } catch (error) {
-        showLoading(false);
-        console.error('Error completing Last.fm auth:', error);
-        alert('❌ Error de conexión. Por favor intenta de nuevo siguiendo estos pasos:\n\n1. Haz clic en "YES, ALLOW ACCESS" en Last.fm\n2. ESPERA 5-10 segundos después de ver "Application authenticated"\n3. Haz clic en "Ya autoricé en Last.fm"');
-        return false;
+
+        // Load recommendations for the user
+        const userId = localStorage.getItem('userId');
+        if (userId) {
+            fetchUserRecommendations(userId);
+        }
     }
 }
 
@@ -157,12 +103,12 @@ async function fetchUserRecommendations(userId) {
         // 1. We have a Last.fm user connected
         // 2. We haven't synced with Last.fm yet (checked via a flag)
         const lastfmUser = localStorage.getItem('lastfm_username');
-        const hasSyncedLastfm = localStorage.getItem('lastfm_synced_v1');
+        const hasSyncedLastfm = localStorage.getItem('lastfm_synced_v2');
 
         if (lastfmUser && !hasSyncedLastfm) {
-            console.log('Last.fm connected but not synced. Triggering generation/merge for:', lastfmUser);
+            console.log('Last.fm connected but not synced (v2). Triggering generation/merge for:', lastfmUser);
             // Mark as synced BEFORE calling to prevent loops if it fails or returns 0
-            localStorage.setItem('lastfm_synced_v1', 'true');
+            localStorage.setItem('lastfm_synced_v2', 'true');
             await generateAndSaveRecommendations(userId, lastfmUser);
             return; // Exit, the generation function will call fetch again
         }
@@ -185,7 +131,8 @@ async function fetchUserRecommendations(userId) {
 async function generateAndSaveRecommendations(userId, lastfmUsername) {
     showLoading(true, 'Generando recomendaciones personalizadas...');
     try {
-        // 1. Get recommendations from Last.fm + Recommender Service
+        // 1. Get recommendations from Last.fm
+        console.log('Step 1: Fetching Last.fm recommendations...');
         const genResp = await fetch('/api/lastfm/recommendations', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -198,17 +145,44 @@ async function generateAndSaveRecommendations(userId, lastfmUsername) {
         if (!genResp.ok) throw new Error('Failed to generate recommendations');
         const genData = await genResp.json();
         const newLastfmRecs = genData.albums || [];
-
-        if (newLastfmRecs.length === 0) {
-            console.warn('No recommendations generated from Last.fm');
-            showLoading(false);
-            return;
-        }
-
         console.log(`✓ Generated ${newLastfmRecs.length} recommendations from Last.fm`);
 
-        // 1.5. Load existing recommendations to merge
-        let finalRecs = newLastfmRecs;
+        // 2. Get recommendations for Selected Artists (Manual)
+        console.log('Step 2: Fetching Manual Artist recommendations...');
+        let manualRecs = [];
+        try {
+            // 2a. Get selected artists
+            const artistsResp = await fetch(`/api/users/${userId}/selected-artists`);
+            if (artistsResp.ok) {
+                const selectedArtists = await artistsResp.json();
+                const artistNames = selectedArtists.map(a => a.artist_name);
+
+                if (artistNames.length > 0) {
+                    console.log(`Found ${artistNames.length} selected artists:`, artistNames);
+                    // 2b. Generate recommendations for them
+                    const recsResp = await fetch('/api/recommendations/artists', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ artist_names: artistNames })
+                    });
+
+                    if (recsResp.ok) {
+                        const recsData = await recsResp.json();
+                        if (recsData.recommendations) {
+                            manualRecs = formatArtistRecommendations(recsData.recommendations);
+                            console.log(`✓ Generated ${manualRecs.length} recommendations from selected artists`);
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('Error fetching manual artist recommendations:', e);
+        }
+
+        // 3. Load existing recommendations to merge (preserve status)
+        console.log('Step 3: Merging with existing recommendations...');
+        let finalRecs = [...newLastfmRecs, ...manualRecs];
+
         try {
             const existingResp = await fetch(`/api/users/${userId}/recommendations`);
             if (existingResp.ok) {
@@ -216,23 +190,45 @@ async function generateAndSaveRecommendations(userId, lastfmUsername) {
                 if (existingRecs.length > 0) {
                     console.log(`✓ Found ${existingRecs.length} existing recommendations`);
 
-                    // Merge: keep all existing recs, add new Last.fm recs that don't exist
-                    const existingKeys = new Set(existingRecs.map(r => `${r.artist_name}::${r.album_title || r.album_name}`));
-                    const newRecs = newLastfmRecs.filter(r => {
-                        const key = `${r.artist_name}::${r.album_name || r.album_title}`;
-                        return !existingKeys.has(key);
+                    // Create a map of existing recs by key for easy lookup
+                    const existingMap = new Map();
+                    existingRecs.forEach(r => {
+                        const key = `${r.artist_name}::${r.album_title || r.album_name}`;
+                        existingMap.set(key, r);
                     });
 
-                    finalRecs = [...existingRecs, ...newRecs];
-                    console.log(`✓ Merged: ${existingRecs.length} existing + ${newRecs.length} new = ${finalRecs.length} total`);
+                    // Filter new recs: 
+                    // - If it exists in DB, keep the DB version (preserves status/id)
+                    // - If it doesn't exist, keep the new version
+                    const mergedRecs = [];
+                    const processedKeys = new Set();
+
+                    // Add existing recs first (they are the source of truth for status)
+                    existingRecs.forEach(r => {
+                        const key = `${r.artist_name}::${r.album_title || r.album_name}`;
+                        mergedRecs.push(r);
+                        processedKeys.add(key);
+                    });
+
+                    // Add new recs if they don't exist
+                    finalRecs.forEach(r => {
+                        const key = `${r.artist_name}::${r.album_name || r.album_title}`;
+                        if (!processedKeys.has(key)) {
+                            mergedRecs.push(r);
+                            processedKeys.add(key);
+                        }
+                    });
+
+                    finalRecs = mergedRecs;
+                    console.log(`✓ Final merge count: ${finalRecs.length}`);
                 }
             }
         } catch (e) {
             console.warn('Could not load existing recommendations for merge:', e);
-            // Continue with just Last.fm recs
         }
 
-        // 2. Save merged recommendations to the database
+        // 4. Save merged recommendations to the database
+        console.log('Step 4: Saving to database...');
         const saveResp = await fetch(`/users/${userId}/recommendations/regenerate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -241,11 +237,10 @@ async function generateAndSaveRecommendations(userId, lastfmUsername) {
 
         if (!saveResp.ok) throw new Error('Failed to save recommendations');
 
-        console.log('Recommendations saved successfully');
+        console.log('✓ Recommendations saved successfully');
 
-        // 2.5. Save Last.fm profile (top artists) to database
+        // 5. Save Last.fm profile (top artists)
         try {
-            // Use relative path to gateway, not direct service URL
             const profileResp = await fetch(`/api/lastfm/top-artists`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -265,7 +260,7 @@ async function generateAndSaveRecommendations(userId, lastfmUsername) {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             lastfm_username: lastfmUsername,
-                            top_artists: topArtists.slice(0, 50) // Save top 50
+                            top_artists: topArtists.slice(0, 50)
                         })
                     });
                     console.log('✓ Last.fm profile saved');
@@ -273,12 +268,15 @@ async function generateAndSaveRecommendations(userId, lastfmUsername) {
             }
         } catch (e) {
             console.warn('Could not save Last.fm profile:', e);
-            // Non-critical, continue anyway
         }
 
-        // 3. Fetch again to display
+        // 6. Fetch again to display
         showLoading(false);
         await fetchUserRecommendations(userId);
+
+        if (typeof showToast === 'function') {
+            showToast('Recomendaciones actualizadas correctamente', 'success');
+        }
 
     } catch (e) {
         console.error('Error generating recommendations:', e);
@@ -304,35 +302,11 @@ function syncAlbumStatusesFromRecs(recommendations) {
 
 
 
-// Handle Last.fm callback (handled by backend, check status)
+// Legacy callback handler - no longer needed as callback.html handles everything
+// Kept as no-op for backwards compatibility
 async function handleLastfmCallback() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get('token');
-
-    if (token && localStorage.getItem('vinilogy_lastfm_auth_pending')) {
-        showLoading(true, 'Completando autenticación con Last.fm...');
-
-        try {
-            const response = await fetch(`/auth/lastfm/callback?token=${token}`);
-            const data = await response.json();
-
-            if (data.status === 'ok' && data.username) {
-                localStorage.setItem('lastfm_username', data.username);
-                localStorage.setItem('has_lastfm_connected', 'true');
-                localStorage.removeItem('vinilogy_lastfm_auth_pending');
-
-                window.history.replaceState({}, document.title, '/');
-
-                setTimeout(async () => {
-                    await loadAllRecommendations();
-                }, 1000);
-            }
-        } catch (error) {
-            console.error('Error completing Last.fm auth:', error);
-            showLoading(false);
-            alert('Error al completar la autenticación de Last.fm');
-        }
-    }
+    // All callback logic now handled in callback.html
+    // This function is kept to avoid breaking existing code that calls it
 }
 
 // Show/hide loading state (legacy, keep for simple loads)
@@ -748,7 +722,7 @@ function filterRecommendations(filter) {
     } else if (filter === 'lastfm') {
         filtered = allRecommendations.filter(rec => rec.source === 'lastfm');
     } else if (filter === 'artists') {
-        filtered = allRecommendations.filter(rec => rec.source === 'artist_based');
+        filtered = allRecommendations.filter(rec => rec.source === 'manual');
     } else if (filter === 'favorites') {
         filtered = allRecommendations.filter(rec => {
             const artist = rec.artist_name || rec.album_info?.artists?.[0]?.name || 'Unknown';
@@ -1072,10 +1046,14 @@ function closeArtistSearch() {
     document.body.style.overflow = '';
 }
 
-async function handleArtistSelection(selectedArtists) {
+async function handleArtistSelection(selectedArtists, searchComponent) {
     const userId = localStorage.getItem('userId');
+    console.log('handleArtistSelection called with', selectedArtists.length, 'artists. User:', userId);
 
-    // Sync with database
+    // Use passed component or fallback to global (for backward compatibility)
+    const component = searchComponent || artistSearchComponent;
+
+    // Sync with database (artists)
     if (userId) {
         try {
             // 1. Get current DB artists
@@ -1102,7 +1080,7 @@ async function handleArtistSelection(selectedArtists) {
                         if (addResp.ok) {
                             console.log(`✓ Added artist to DB: ${artist.name}`);
                         } else {
-                            console.error(`✗ Failed to add artist ${artist.name}:`, addResp.status, await addResp.text());
+                            console.error(`✗ Failed to add artist ${artist.name}:`, addResp.status);
                         }
                     }
                 }
@@ -1137,155 +1115,102 @@ async function handleArtistSelection(selectedArtists) {
     localStorage.setItem('selected_artist_names', JSON.stringify(artistNames));
 
 
-    if (!artistSearchComponent) {
+    if (!component) {
         console.error('Artist search component not available');
         closeArtistSearch();
         alert('Error: el componente de búsqueda no está disponible. Por favor, intenta de nuevo.');
         return;
     }
 
-    if (artistSearchComponent.pendingPromises.size > 0) {
-        console.log(`⏳ Waiting for ${artistSearchComponent.pendingPromises.size} pending recommendations...`);
+    if (component.pendingPromises.size > 0) {
+        console.log(`⏳ Waiting for ${component.pendingPromises.size} pending recommendations...`);
         showLoading(true, 'Finalizando recomendaciones...');
-        await artistSearchComponent.waitForAllPendingRecommendations();
+        await component.waitForAllPendingRecommendations();
         showLoading(false);
     }
 
     closeArtistSearch();
 
-    const loadingStatus = artistSearchComponent.getLoadingStatus();
-    const cachedRecs = artistSearchComponent.getCachedRecommendations();
+    const loadingStatus = component.getLoadingStatus();
+    const cachedRecs = component.getCachedRecommendations();
 
-    console.log(`Cache status: ${cachedRecs.length} recommendations, ${loadingStatus.success}/${loadingStatus.total} successful, ${loadingStatus.error} errors, all successful: ${loadingStatus.hasAllSuccessful}`);
+    console.log(`Cache status: ${cachedRecs.length} recommendations, ${loadingStatus.success}/${loadingStatus.total} successful, ${loadingStatus.error} errors`);
 
-    if (loadingStatus.hasAllSuccessful && cachedRecs.length > 0) {
-        console.log('✓ Using cached artist recommendations (all successful)');
-        const formattedRecs = formatArtistRecommendations(cachedRecs);
+    let finalRecs = [];
 
-        // Load existing recommendations from database (including favorites)
-        const userId = localStorage.getItem('userId');
-        let finalRecs = formattedRecs;
+    // Strategy: Use cached recommendations if available, otherwise fetch from backend
+    if (cachedRecs.length > 0) {
+        console.log('✓ Using cached artist recommendations');
+        finalRecs = formatArtistRecommendations(cachedRecs);
+    } else {
+        console.log('⚠ No cached recommendations, falling back to backend generation');
+        const title = 'Generando Recomendaciones';
+        startProgressMonitoring(title);
 
-        if (userId) {
-            try {
-                const dbResp = await fetch(`/api/users/${userId}/recommendations`);
-                if (dbResp.ok) {
-                    const dbRecs = await dbResp.json();
-                    console.log(`✓ Loaded ${dbRecs.length} existing recommendations from database`);
+        try {
+            const response = await fetch('/api/recommendations/artists', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ artist_names: artistNames })
+            });
+            const data = await response.json();
+            stopProgressMonitoring();
+            hideProgressModal();
 
-                    // Merge: keep all DB recs, add new artist recs that don't exist
-                    const existingKeys = new Set(dbRecs.map(r => `${r.artist_name}::${r.album_title || r.album_name}`));
-                    const newRecs = formattedRecs.filter(r => {
-                        const key = `${r.artist_name}::${r.album_name}`;
-                        return !existingKeys.has(key);
-                    });
-
-                    finalRecs = [...dbRecs, ...newRecs];
-                    console.log(`✓ Merged: ${dbRecs.length} existing + ${newRecs.length} new = ${finalRecs.length} total`);
-                }
-            } catch (e) {
-                console.error('Error loading existing recommendations:', e);
+            if (data.recommendations && data.recommendations.length > 0) {
+                finalRecs = formatArtistRecommendations(data.recommendations);
             }
+        } catch (error) {
+            console.error('Error loading artist recommendations:', error);
+            stopProgressMonitoring();
+            hideProgressModal();
+            alert('Error al cargar recomendaciones. Por favor, intenta de nuevo.');
+            return;
         }
+    }
 
-        // Save to database to persist favorites
-        if (userId) {
-            try {
-                await fetch(`/users/${userId}/recommendations/regenerate`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ new_recs: finalRecs })
-                });
-                console.log('✓ Saved merged recommendations to database');
-            } catch (e) {
-                console.error('Error saving to database:', e);
-            }
-        }
-
-        localStorage.setItem('last_recommendations', JSON.stringify(finalRecs));
-        localStorage.setItem('last_updated', new Date().toISOString());
-        renderRecommendations(finalRecs);
+    if (finalRecs.length === 0) {
+        alert('No se encontraron recomendaciones para estos artistas.');
         return;
     }
 
-    if (loadingStatus.error > 0) {
-        console.log(`⚠ ${loadingStatus.error} artists failed to load, falling back to backend generation`);
-    }
+    // Save recommendations to DB if user is logged in
+    if (userId) {
+        try {
+            console.log(`Saving ${finalRecs.length} recommendations to database for user ${userId}...`);
+            const saveResp = await fetch(`/users/${userId}/recommendations/regenerate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ new_recs: finalRecs })
+            });
 
-    const title = 'Generando Recomendaciones';
-    startProgressMonitoring(title);
-
-    try {
-        const response = await fetch('/api/recommendations/artists', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                artist_names: artistNames,
-
-            })
-        });
-
-        const data = await response.json();
-
-        stopProgressMonitoring();
-        hideProgressModal();
-
-        if (data.recommendations && data.recommendations.length > 0) {
-            const formattedRecs = formatArtistRecommendations(data.recommendations);
-
-            // Load existing recommendations from database (including favorites)
-            const userId = localStorage.getItem('userId');
-            let finalRecs = formattedRecs;
-
-            if (userId) {
-                try {
-                    const dbResp = await fetch(`/api/users/${userId}/recommendations`);
-                    if (dbResp.ok) {
-                        const dbRecs = await dbResp.json();
-                        console.log(`✓ Loaded ${dbRecs.length} existing recommendations from database`);
-
-                        // Merge: keep all DB recs, add new artist recs that don't exist
-                        const existingKeys = new Set(dbRecs.map(r => `${r.artist_name}::${r.album_title || r.album_name}`));
-                        const newRecs = formattedRecs.filter(r => {
-                            const key = `${r.artist_name}::${r.album_name}`;
-                            return !existingKeys.has(key);
-                        });
-
-                        finalRecs = [...dbRecs, ...newRecs];
-                        console.log(`✓ Merged: ${dbRecs.length} existing + ${newRecs.length} new = ${finalRecs.length} total`);
-                    }
-                } catch (e) {
-                    console.error('Error loading existing recommendations:', e);
+            if (saveResp.ok) {
+                console.log('✓ Recommendations saved successfully to DB');
+                if (typeof showToast === 'function') {
+                    showToast('Recomendaciones guardadas correctamente', 'success');
+                }
+            } else {
+                console.error('✗ Failed to save recommendations:', saveResp.status, await saveResp.text());
+                if (typeof showToast === 'function') {
+                    showToast('Error al guardar recomendaciones', 'error');
                 }
             }
 
-            // Save to database to persist favorites
-            if (userId) {
-                try {
-                    await fetch(`/users/${userId}/recommendations/regenerate`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ new_recs: finalRecs })
-                    });
-                    console.log('✓ Saved merged recommendations to database');
-                } catch (e) {
-                    console.error('Error saving to database:', e);
-                }
-            }
+            // Reload from DB to ensure consistency (and get IDs, favorites, etc.)
+            await fetchUserRecommendations(userId);
 
+        } catch (e) {
+            console.error('Error saving recommendations to DB:', e);
+            // Fallback to local rendering if DB save fails
             localStorage.setItem('last_recommendations', JSON.stringify(finalRecs));
             localStorage.setItem('last_updated', new Date().toISOString());
             renderRecommendations(finalRecs);
-        } else {
-            alert('No se encontraron recomendaciones para estos artistas.');
         }
-    } catch (error) {
-        console.error('Error loading artist recommendations:', error);
-        stopProgressMonitoring();
-        hideProgressModal();
-        alert('Error al cargar recomendaciones. Por favor, intenta de nuevo.');
+    } else {
+        // Guest user: save to localStorage
+        localStorage.setItem('last_recommendations', JSON.stringify(finalRecs));
+        localStorage.setItem('last_updated', new Date().toISOString());
+        renderRecommendations(finalRecs);
     }
 }
 
@@ -1300,7 +1225,7 @@ function formatArtistRecommendations(recommendations) {
                 rating: rec.rating,
                 votes: rec.votes,
                 year: rec.year,
-                source: 'artist_based'
+                source: 'manual'  // Map to 'manual' for DB constraint
             };
         }
         return rec;
@@ -1311,7 +1236,12 @@ function formatArtistRecommendations(recommendations) {
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     initTheme();
+
+    // Check if we just returned from Last.fm authentication
+    checkLastfmAuthReturn();
+
     handleLastfmCallback();
+
 
     // If user is logged in, load fresh recommendations from DB
     const userId = localStorage.getItem('userId');

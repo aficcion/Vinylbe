@@ -48,7 +48,8 @@ class LastFMAuthManager:
         
         params = {
             "api_key": self.api_key,
-            "token": token
+            "token": token,
+            "cb": self.redirect_uri
         }
         return f"{self.auth_url_base}?{urlencode(params)}"
 
