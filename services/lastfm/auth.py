@@ -41,14 +41,13 @@ class LastFMAuthManager:
             data = resp.json()
             return data.get("token")
 
-    def get_auth_url(self, token: str) -> str:
+    def get_auth_url(self) -> str:
         """Get authorization URL for user to approve"""
         if not all([self.api_key, self.api_secret]):
             raise ValueError("Missing Last.fm credentials")
         
         params = {
             "api_key": self.api_key,
-            "token": token,
             "cb": self.redirect_uri
         }
         return f"{self.auth_url_base}?{urlencode(params)}"

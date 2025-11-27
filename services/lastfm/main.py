@@ -81,17 +81,13 @@ async def health():
 async def get_auth_url():
     try:
         temp_auth = LastFMAuthManager()
-        token = await temp_auth.get_token()
-        if not token:
-            raise HTTPException(status_code=500, detail="Failed to get Last.fm token")
+        # Web Flow: We don't pre-generate token. Last.fm generates it.
+        auth_url = temp_auth.get_auth_url()
         
-        auth_url = temp_auth.get_auth_url(token)
-        auth_managers[token] = (temp_auth, time.time())
-        log_event("lastfm-service", "INFO", f"Generated auth URL with token: {token[:10]}...")
+        log_event("lastfm-service", "INFO", "Generated auth URL (Web Flow)")
         
         return {
-            "auth_url": auth_url,
-            "token": token
+            "auth_url": auth_url
         }
     except Exception as e:
         log_event("lastfm-service", "ERROR", f"Failed to generate auth URL: {str(e)}")
@@ -101,14 +97,9 @@ async def get_auth_url():
 @app.post("/auth/callback")
 async def auth_callback(token: str):
     try:
-        if token not in auth_managers:
-            raise HTTPException(status_code=400, detail="Invalid token")
-        
-        auth_manager, created_time = auth_managers[token]
-        
-        if time.time() - created_time > AUTH_TOKEN_TTL:
-            del auth_managers[token]
-            raise HTTPException(status_code=400, detail="Token expired")
+        # Web Flow: We receive the token from Last.fm redirect
+        # We don't have state in auth_managers, so we create a new manager
+        auth_manager = LastFMAuthManager()
         
         success = await auth_manager.get_session(token)
         if not success:
@@ -128,16 +119,12 @@ async def auth_callback(token: str):
         await client.start()
         lastfm_clients[username] = client
         
-        del auth_managers[token]
-        
         return {
             "status": "success",
             "username": username
         }
     except Exception as e:
         log_event("lastfm-service", "ERROR", f"Auth callback failed: {str(e)}")
-        if token in auth_managers:
-            del auth_managers[token]
         raise HTTPException(status_code=500, detail=str(e))
 
 

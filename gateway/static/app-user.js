@@ -37,10 +37,11 @@ async function loginLastfm() {
         const response = await fetch('/auth/lastfm/login');
         const data = await response.json();
 
-        if (data.auth_url && data.token) {
-            // Save token and set auth pending flag
-            localStorage.setItem('vinilogy_lastfm_token', data.token);
+        if (data.auth_url) {
+            // Set auth pending flag
             localStorage.setItem('vinilogy_lastfm_auth_pending', 'true');
+            // Remove any old token
+            localStorage.removeItem('vinilogy_lastfm_token');
 
             // Redirect to Last.fm in the same window
             window.location.href = data.auth_url;
