@@ -356,7 +356,7 @@ def regenerate_recommendations(user_id: int, new_recs: List[Dict[str, Any]]) -> 
                 
             # Check if recommendation already exists
             cur.execute(
-                "SELECT id, status FROM recommendation WHERE user_id = ? AND artist_name = ? AND album_title = ?",
+                "SELECT id, status FROM recommendation WHERE user_id = ? AND artist_name = ? COLLATE NOCASE AND album_title = ? COLLATE NOCASE",
                 (user_id, artist, album),
             )
             existing_row = cur.fetchone()
@@ -402,8 +402,9 @@ def regenerate_recommendations(user_id: int, new_recs: List[Dict[str, Any]]) -> 
 def get_recommendations_for_user(user_id: int, include_favorites: bool = True) -> List[Dict[str, Any]]:
     """Return a list of recommendation dicts for the user.
 
-    By default it returns recommendations with status ``neutral`` and, if ``include_favorites`` is
-    True, also those with status ``favorite``.
+    Returns ALL recommendations regardless of status. The frontend will handle filtering
+    based on the current view (all, favorites, owned, disliked, etc.).
+    The include_favorites parameter is kept for backwards compatibility but is now ignored.
     """
     conn = get_connection()
     try:
@@ -424,12 +425,9 @@ def get_recommendations_for_user(user_id: int, include_favorites: bool = True) -
                 OR 
                 (a.artist_id = ar.id AND a.title = r.album_title COLLATE NOCASE)
             WHERE r.user_id = ?
+            GROUP BY r.id
+            ORDER BY r.created_at DESC
         """
-        
-        if include_favorites:
-            query += " AND r.status IN ('neutral', 'favorite')"
-        else:
-            query += " AND r.status = 'neutral'"
             
         cur.execute(query, (user_id,))
         return cur.fetchall()
@@ -453,6 +451,7 @@ def get_favorite_recommendations(user_id: int) -> List[Dict[str, Any]]:
                 OR 
                 (a.artist_id = ar.id AND a.title = r.album_title COLLATE NOCASE)
             WHERE r.user_id = ? AND r.status = 'favorite'
+            GROUP BY r.id
         """
         cur.execute(query, (user_id,))
         return cur.fetchall()

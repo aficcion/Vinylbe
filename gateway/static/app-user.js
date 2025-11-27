@@ -2,14 +2,21 @@
     const uid = localStorage.getItem('userId');
     if (uid) {
         try {
-            const resp = await fetch(`/api/users/${uid}`);
-            if (!resp.ok) {
-                console.warn(`Usuario ${uid} no encontrado → limpiando localStorage`);
-                localStorage.removeItem('userId');
-                localStorage.removeItem('lastfm_username');
-                // Recargar para iniciar flujo de creación de usuario
-                location.reload();
+            // 2. Sync Last.fm state from backend
+            try {
+                const profileResp = await fetch(`/api/users/${uid}/profile/lastfm`);
+                if (profileResp.ok) {
+                    const profile = await profileResp.json();
+                    if (profile.lastfm_username) {
+                        console.log('✓ Synced Last.fm username from backend (IIFE):', profile.lastfm_username);
+                        localStorage.setItem('lastfm_username', profile.lastfm_username);
+                        window.lastfmConnected = true;
+                    }
+                }
+            } catch (e) {
+                console.warn('Could not sync Last.fm profile:', e);
             }
+
         } catch (e) {
             console.error('Error verificando usuario al iniciar:', e);
         }
@@ -106,25 +113,29 @@ async function fetchUserRecommendations(userId) {
         const lastfmUser = localStorage.getItem('lastfm_username');
         const hasSyncedLastfm = localStorage.getItem('lastfm_synced_v2');
 
-        if (lastfmUser && !hasSyncedLastfm) {
-            console.log('Last.fm connected but not synced (v2). Triggering generation/merge for:', lastfmUser);
+        // Trigger generation if:
+        // 1. We have a Last.fm user
+        // 2. AND (We haven't synced yet OR we synced but got 0 results)
+        if (lastfmUser && (!hasSyncedLastfm || data.length === 0)) {
+            console.log('Last.fm connected but no recs/not synced. Triggering generation/merge for:', lastfmUser);
             // Mark as synced BEFORE calling to prevent loops if it fails or returns 0
             localStorage.setItem('lastfm_synced_v2', 'true');
             await generateAndSaveRecommendations(userId, lastfmUser);
             return; // Exit, the generation function will call fetch again
         }
 
-        // Store in localStorage for offline fallback
-        localStorage.setItem('last_recommendations', JSON.stringify(data));
-        localStorage.setItem('last_updated', new Date().toISOString());
+        // localStorage caching removed to prevent stale data issues
+        // localStorage.setItem('last_recommendations', JSON.stringify(data));
+        // localStorage.setItem('last_updated', new Date().toISOString());
 
         // Sync album status map from the received recommendations
         syncAlbumStatusesFromRecs(data);
         renderRecommendations(data);
     } catch (e) {
         console.error('Error fetching user recommendations:', e);
-        // Fallback to cached if any
-        checkCachedRecommendations();
+        // Fallback removed
+        // checkCachedRecommendations();
+        console.warn('Could not fetch recommendations, and cache is disabled.');
     }
 }
 
@@ -286,15 +297,32 @@ async function generateAndSaveRecommendations(userId, lastfmUsername) {
     }
 }
 
+function getRecArtistAndAlbum(rec) {
+    // Normalize artist name
+    let artist = rec.artist_name || rec.artist || 'Unknown Artist';
+    if (!artist || artist === 'Unknown Artist') {
+        artist = rec.album_info?.artists?.[0]?.name || 'Unknown Artist';
+    }
+
+    // Normalize album name
+    let album = rec.album_name || rec.album_title || rec.name || 'Unknown Album';
+    if (!album || album === 'Unknown Album') {
+        album = rec.album_info?.name || 'Unknown Album';
+    }
+
+    return { artist, album };
+}
+
 function syncAlbumStatusesFromRecs(recommendations) {
     // Clear current map
     albumStatuses.clear();
     recommendations.forEach(rec => {
-        const artist = rec.artist_name || rec.album_info?.artists?.[0]?.name || 'Unknown';
-        const album = rec.album_name || rec.album_info?.name || 'Unknown';
-        if (rec.status && rec.status !== 'pending') {
+        const { artist, album } = getRecArtistAndAlbum(rec);
+        // Sync all statuses from DB: neutral, favorite, owned, disliked
+        if (rec.status) {
             const key = `${artist}|${album}`;
-            albumStatuses.set(key, rec.status);
+            // Map 'neutral' to null for the frontend (no special status)
+            albumStatuses.set(key, rec.status === 'neutral' ? null : rec.status);
         }
     });
 }
@@ -485,25 +513,10 @@ async function loadAllRecommendations() {
             return;
         }
 
-        // Merge with existing artist recommendations if they exist
-        const existingRecs = localStorage.getItem('last_recommendations');
+        // localStorage caching removed
         let finalRecs = lastfmAlbums;
-
-        if (existingRecs) {
-            try {
-                const existing = JSON.parse(existingRecs);
-                const artistRecs = existing.filter(rec => rec.source === 'artist_based');
-                if (artistRecs.length > 0) {
-                    console.log(`✓ Merging ${lastfmAlbums.length} Last.fm recs with ${artistRecs.length} existing artist recs`);
-                    finalRecs = [...lastfmAlbums, ...artistRecs];
-                }
-            } catch (e) {
-                console.error('Error parsing existing recommendations:', e);
-            }
-        }
-
-        localStorage.setItem('last_recommendations', JSON.stringify(finalRecs));
-        localStorage.setItem('last_updated', new Date().toISOString());
+        // localStorage.setItem('last_recommendations', JSON.stringify(finalRecs));
+        // localStorage.setItem('last_updated', new Date().toISOString());
 
         // Save to database if user is logged in
         const userId = localStorage.getItem('userId');
@@ -623,6 +636,7 @@ async function loadMixedRecommendations(artistNames) {
 
 let allRecommendations = [];
 let currentFilter = 'all';
+window.currentFilter = currentFilter; // Expose globally
 
 // Render recommendations grid (fast, no pricing calls)
 function renderRecommendations(recommendations) {
@@ -634,7 +648,7 @@ function renderRecommendations(recommendations) {
     document.getElementById('album-detail-view').style.display = 'none';
     document.getElementById('recommendations-view').classList.add('active');
 
-    const hasArtistBased = recommendations.some(rec => rec.source === 'artist_based');
+    const hasArtistBased = recommendations.some(rec => rec.source === 'artist_based' || rec.source === 'manual');
     const hasLastfmBased = recommendations.some(rec => rec.source === 'lastfm');
 
     const artistSearchBtn = document.getElementById('artist-search-header-btn');
@@ -657,7 +671,9 @@ function renderRecommendations(recommendations) {
     // Show Last.fm button only if not connected
     const lastfmUsername = localStorage.getItem('lastfm_username');
     if (lastfmHeaderBtn) {
-        lastfmHeaderBtn.style.display = lastfmUsername ? 'none' : 'inline-flex';
+        const shouldHide = !!(lastfmUsername || window.lastfmConnected);
+        console.log(`Render: Last.fm button visibility check. Username: ${lastfmUsername}, Connected: ${window.lastfmConnected} -> Hide: ${shouldHide}`);
+        lastfmHeaderBtn.style.display = shouldHide ? 'none' : 'inline-flex';
     }
 
     const filterButtons = document.querySelectorAll('.filter-btn');
@@ -673,18 +689,44 @@ function renderRecommendations(recommendations) {
 
     let filtered;
     if (currentFilter === 'all') {
-        filtered = allRecommendations;
+        // Exclude disliked and owned albums from "all" view
+        filtered = allRecommendations.filter(rec => {
+            const { artist, album } = getRecArtistAndAlbum(rec);
+            const status = typeof window.getAlbumStatus === 'function' ? window.getAlbumStatus(artist, album) : null;
+            return status !== 'disliked' && status !== 'owned';
+        });
     } else if (currentFilter === 'favorites') {
         // Filter only favorites
         filtered = allRecommendations.filter(rec => {
-            const artist = rec.artist_name || rec.album_info?.artists?.[0]?.name || 'Unknown';
-            const album = rec.album_name || rec.album_info?.name || 'Unknown';
+            const { artist, album } = getRecArtistAndAlbum(rec);
             return typeof window.getAlbumStatus === 'function' && window.getAlbumStatus(artist, album) === 'favorite';
         });
     } else if (currentFilter === 'lastfm') {
-        filtered = allRecommendations.filter(rec => rec.source === 'lastfm');
+        // Exclude disliked and owned from lastfm view
+        filtered = allRecommendations.filter(rec => {
+            const { artist, album } = getRecArtistAndAlbum(rec);
+            const status = typeof window.getAlbumStatus === 'function' ? window.getAlbumStatus(artist, album) : null;
+            return rec.source === 'lastfm' && status !== 'disliked' && status !== 'owned';
+        });
     } else if (currentFilter === 'artists') {
-        filtered = allRecommendations.filter(rec => rec.source === 'artist_based');
+        // Exclude disliked and owned from artists view
+        filtered = allRecommendations.filter(rec => {
+            const { artist, album } = getRecArtistAndAlbum(rec);
+            const status = typeof window.getAlbumStatus === 'function' ? window.getAlbumStatus(artist, album) : null;
+            return rec.source === 'manual' && status !== 'disliked' && status !== 'owned';
+        });
+    } else if (currentFilter === 'owned') {
+        // Show only owned albums
+        filtered = allRecommendations.filter(rec => {
+            const { artist, album } = getRecArtistAndAlbum(rec);
+            return typeof window.getAlbumStatus === 'function' && window.getAlbumStatus(artist, album) === 'owned';
+        });
+    } else if (currentFilter === 'disliked') {
+        // Show only disliked albums
+        filtered = allRecommendations.filter(rec => {
+            const { artist, album } = getRecArtistAndAlbum(rec);
+            return typeof window.getAlbumStatus === 'function' && window.getAlbumStatus(artist, album) === 'disliked';
+        });
     } else {
         filtered = allRecommendations;
     }
@@ -711,6 +753,7 @@ function displayFilteredRecommendations(recommendations) {
 
 function filterRecommendations(filter) {
     currentFilter = filter;
+    window.currentFilter = filter; // Sync global
 
     document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.classList.remove('active');
@@ -719,30 +762,56 @@ function filterRecommendations(filter) {
 
     let filtered;
     if (filter === 'all') {
-        filtered = allRecommendations;
+        // Exclude disliked and owned albums from "all" view
+        filtered = allRecommendations.filter(rec => {
+            const { artist, album } = getRecArtistAndAlbum(rec);
+            const status = typeof window.getAlbumStatus === 'function' ? window.getAlbumStatus(artist, album) : null;
+            return status !== 'disliked' && status !== 'owned';
+        });
     } else if (filter === 'lastfm') {
-        filtered = allRecommendations.filter(rec => rec.source === 'lastfm');
+        // Exclude disliked and owned from lastfm view
+        filtered = allRecommendations.filter(rec => {
+            const { artist, album } = getRecArtistAndAlbum(rec);
+            const status = typeof window.getAlbumStatus === 'function' ? window.getAlbumStatus(artist, album) : null;
+            return rec.source === 'lastfm' && status !== 'disliked' && status !== 'owned';
+        });
     } else if (filter === 'artists') {
-        filtered = allRecommendations.filter(rec => rec.source === 'manual');
+        // Exclude disliked and owned from artists view
+        filtered = allRecommendations.filter(rec => {
+            const { artist, album } = getRecArtistAndAlbum(rec);
+            const status = typeof window.getAlbumStatus === 'function' ? window.getAlbumStatus(artist, album) : null;
+            return rec.source === 'manual' && status !== 'disliked' && status !== 'owned';
+        });
     } else if (filter === 'favorites') {
         filtered = allRecommendations.filter(rec => {
-            const artist = rec.artist_name || rec.album_info?.artists?.[0]?.name || 'Unknown';
-            const album = rec.album_name || rec.album_info?.name || 'Unknown';
+            const { artist, album } = getRecArtistAndAlbum(rec);
             return typeof window.getAlbumStatus === 'function' &&
                 window.getAlbumStatus(artist, album) === 'favorite';
+        });
+    } else if (filter === 'owned') {
+        // Show only owned albums
+        filtered = allRecommendations.filter(rec => {
+            const { artist, album } = getRecArtistAndAlbum(rec);
+            return typeof window.getAlbumStatus === 'function' &&
+                window.getAlbumStatus(artist, album) === 'owned';
+        });
+    } else if (filter === 'disliked') {
+        // Show only disliked albums
+        filtered = allRecommendations.filter(rec => {
+            const { artist, album } = getRecArtistAndAlbum(rec);
+            return typeof window.getAlbumStatus === 'function' &&
+                window.getAlbumStatus(artist, album) === 'disliked';
         });
     }
 
     displayFilteredRecommendations(filtered);
 }
+window.filterRecommendations = filterRecommendations; // Expose globally
 
 // Create album card (no pricing data yet)
 function createAlbumCard(rec) {
-    let artist, album, cover;
-
-    // Generic property mapping to handle various sources (manual, lastfm, artist_based)
-    artist = rec.artist_name || rec.artist || 'Unknown Artist';
-    album = rec.album_name || rec.album_title || rec.name || 'Unknown Album';
+    // Use helper to get consistent names
+    const { artist, album } = getRecArtistAndAlbum(rec);
 
     // Handle cover images
     // Check for various image properties and ensure it's not an empty string
@@ -762,24 +831,18 @@ function createAlbumCard(rec) {
         currentStatus = window.getAlbumStatus(artist, album);
     }
 
-    // Hide if disliked or owned unless in specific view
-    if ((currentStatus === 'disliked' || currentStatus === 'owned') && window.currentFilter !== 'all') {
-        // We might want to hide them, but for now let's just mark them
-        // card.classList.add('hidden-card'); 
-    }
-
     card.innerHTML = `
         <div class="album-cover">
             <img src="${cover}" alt="${album}" loading="lazy">
+        </div>
+        <div class="album-info">
+            <h3>${album}</h3>
+            <p>${artist}</p>
             <div class="album-actions">
                 <button class="action-btn favorite ${currentStatus === 'favorite' ? 'active' : ''}" title="Guardar en favoritos" data-action="favorite">★</button>
                 <button class="action-btn owned ${currentStatus === 'owned' ? 'active' : ''}" title="Ya lo tengo" data-action="owned">✓</button>
                 <button class="action-btn disliked ${currentStatus === 'disliked' ? 'active' : ''}" title="No me interesa" data-action="disliked">✗</button>
             </div>
-        </div>
-        <div class="album-info">
-            <h3>${album}</h3>
-            <p>${artist}</p>
         </div>
     `;
 
@@ -807,19 +870,34 @@ function createAlbumCard(rec) {
 
                 console.log(`Setting status: ${artist} - ${album} -> ${newStatus}`);
 
-                // Call global handler
-                await window.setAlbumStatus(artist, album, newStatus, rec.id);
+                console.log(`Action: ${action}, NewStatus: ${newStatus}, Filter: ${currentFilter}`);
 
-                // Handle hiding logic if needed
-                if ((newStatus === 'disliked' || newStatus === 'owned') && window.currentFilter !== 'favorites') {
-                    card.style.opacity = '0.5'; // Visual feedback instead of hiding immediately
+                // Immediate visual feedback: hide card if marking as owned/disliked in "all" view
+                const shouldHideImmediately = (newStatus === 'owned' || newStatus === 'disliked') &&
+                    (currentFilter === 'all' ||
+                        currentFilter === 'lastfm' ||
+                        currentFilter === 'artists');
+
+                console.log(`Should hide immediately: ${shouldHideImmediately}`);
+
+                if (shouldHideImmediately) {
+                    // Animate out immediately
+                    card.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                    card.style.opacity = '0';
+                    card.style.transform = 'scale(0.9)';
+
+                    // Remove from DOM after animation (independent of backend call)
+                    setTimeout(() => {
+                        card.remove();
+                    }, 300);
+
+                    // Call global handler with skipRender=true to update DB in background
+                    window.setAlbumStatus(artist, album, newStatus, rec.id, true).catch(e => {
+                        console.error('Error updating status in background:', e);
+                    });
                 } else {
-                    card.style.opacity = '1';
-                }
-
-                // Refresh favorites filter if active
-                if (window.currentFilter === 'favorites') {
-                    window.filterRecommendations('favorites');
+                    // Normal update (favorites, or toggling off in special views)
+                    await window.setAlbumStatus(artist, album, newStatus, rec.id, false);
                 }
             } else {
                 console.error('setAlbumStatus function not available');
@@ -838,7 +916,7 @@ function createAlbumCard(rec) {
 async function openAlbumDetail(rec) {
     let artist, album, cover;
 
-    if (rec.source === 'artist_based' || rec.source === 'lastfm') {
+    if (rec.source === 'artist_based' || rec.source === 'lastfm' || rec.source === 'manual') {
         artist = rec.artist_name || 'Unknown Artist';
         album = rec.album_name || 'Unknown Album';
         cover = rec.cover_url || rec.image_url || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="300"%3E%3Crect fill="%23ddd" width="300" height="300"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="18" dy="10.5" font-weight="bold" x="50%25" y="50%25" text-anchor="middle"%3ENo Cover%3C/text%3E%3C/svg%3E';
@@ -1113,7 +1191,8 @@ async function handleArtistSelection(selectedArtists, searchComponent) {
     }
 
     const artistNames = selectedArtists.map(a => a.name);
-    localStorage.setItem('selected_artist_names', JSON.stringify(artistNames));
+    // localStorage caching for artists removed
+    // localStorage.setItem('selected_artist_names', JSON.stringify(artistNames));
 
 
     if (!component) {
@@ -1203,8 +1282,9 @@ async function handleArtistSelection(selectedArtists, searchComponent) {
         } catch (e) {
             console.error('Error saving recommendations to DB:', e);
             // Fallback to local rendering if DB save fails
-            localStorage.setItem('last_recommendations', JSON.stringify(finalRecs));
-            localStorage.setItem('last_updated', new Date().toISOString());
+            // Fallback removed
+            // localStorage.setItem('last_recommendations', JSON.stringify(finalRecs));
+            // localStorage.setItem('last_updated', new Date().toISOString());
             renderRecommendations(finalRecs);
         }
     } else {
@@ -1238,6 +1318,14 @@ function formatArtistRecommendations(recommendations) {
 document.addEventListener('DOMContentLoaded', async () => {
     initTheme();
 
+    // IMMEDIATELY hide Last.fm button if we can detect connection
+    const quickCheckBtn = document.getElementById('lastfm-header-btn');
+    const quickUsername = localStorage.getItem('lastfm_username');
+    if (quickCheckBtn && quickUsername) {
+        console.log('🚀 Quick hide: Found username in localStorage:', quickUsername);
+        quickCheckBtn.style.display = 'none';
+    }
+
     // Check if we just returned from Last.fm authentication
     checkLastfmAuthReturn();
 
@@ -1251,15 +1339,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (userId) {
         console.log(`🚀 Usuario detectado: ${userId}. Iniciando carga de recomendaciones...`);
 
+        // Sync Last.fm profile first to ensure UI state is correct before rendering
+        try {
+            const profileResp = await fetch(`/api/users/${userId}/profile/lastfm`);
+            if (profileResp.ok) {
+                const profile = await profileResp.json();
+                if (profile.lastfm_username) {
+                    console.log('✓ Synced Last.fm username from backend (in DOMContentLoaded):', profile.lastfm_username);
+                    localStorage.setItem('lastfm_username', profile.lastfm_username);
+                    window.lastfmConnected = true; // Backup flag
+
+                    // Force hide the button immediately
+                    const btn = document.getElementById('lastfm-header-btn');
+                    if (btn) {
+                        console.log('Hiding Last.fm button immediately');
+                        btn.style.display = 'none';
+                    }
+
+                    // Reload sidebar now that we have the username
+                    if (typeof loadProfileSidebar === 'function') {
+                        console.log('Reloading sidebar with synced profile...');
+                        loadProfileSidebar();
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('Error syncing Last.fm profile:', e);
+        }
+
         // 1. Try to fetch existing recommendations
         try {
             await fetchUserRecommendations(userId);
 
             // 2. Check if we actually got anything. If not, and we have a username, force generation.
             const container = document.getElementById('albums-container');
-            if ((!container || container.children.length === 0) && lastfmUsername) {
+            const updatedLastfmUsername = localStorage.getItem('lastfm_username'); // Get fresh value
+            if ((!container || container.children.length === 0) && updatedLastfmUsername) {
                 console.log('⚠️ No hay recomendaciones visibles. Forzando generación inicial...');
-                await generateAndSaveRecommendations(userId, lastfmUsername);
+                await generateAndSaveRecommendations(userId, updatedLastfmUsername);
             }
         } catch (e) {
             console.error('Error en carga inicial:', e);

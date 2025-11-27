@@ -6,23 +6,15 @@ const albumStatuses = new Map(); // key: "artist|album", value: "favorite"|"owne
 
 // Load album statuses from localStorage
 function loadAlbumStatuses() {
-    const saved = localStorage.getItem('album_statuses');
-    if (saved) {
-        try {
-            const data = JSON.parse(saved);
-            Object.entries(data).forEach(([key, value]) => {
-                albumStatuses.set(key, value);
-            });
-        } catch (e) {
-            console.error('Error loading album statuses:', e);
-        }
-    }
+    // localStorage loading removed
+    console.log('loadAlbumStatuses: skipping localStorage load, relying on backend sync');
 }
 
 // Save album statuses to localStorage and DB
 async function saveAlbumStatuses() {
-    const data = Object.fromEntries(albumStatuses);
-    localStorage.setItem('album_statuses', JSON.stringify(data));
+    // localStorage saving removed
+    // const data = Object.fromEntries(albumStatuses);
+    // localStorage.setItem('album_statuses', JSON.stringify(data));
 
     // Also save to database if user is logged in
     const userId = localStorage.getItem('userId');
@@ -37,7 +29,7 @@ function getAlbumKey(artist, album) {
 }
 
 // Set album status
-window.setAlbumStatus = async function (artist, album, status, recId = null) {
+window.setAlbumStatus = async function (artist, album, status, recId = null, skipRender = false) {
     const key = getAlbumKey(artist, album);
 
     // Toggle off if clicking same status
@@ -57,16 +49,16 @@ window.setAlbumStatus = async function (artist, album, status, recId = null) {
             await fetch(`/users/${userId}/recommendations/${recId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ new_status: status || 'pending' })
+                body: JSON.stringify({ new_status: status || 'neutral' })
             });
         } catch (e) {
             console.error('Error updating recommendation status:', e);
         }
     }
 
-    // Re-render if filtering by favorites
-    if (window.currentFilter === 'favorites' && typeof window.filterRecommendations === 'function') {
-        window.filterRecommendations('favorites');
+    // Re-render current filter to update the view
+    if (!skipRender && typeof window.filterRecommendations === 'function' && typeof window.currentFilter !== 'undefined') {
+        window.filterRecommendations(window.currentFilter);
     }
 
     return status;

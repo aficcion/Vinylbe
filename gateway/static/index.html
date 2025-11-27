@@ -340,6 +340,16 @@
             color: white;
         }
 
+        .filter-btn[data-filter="owned"].active {
+            background: #22c55e;
+            color: white;
+        }
+
+        .filter-btn[data-filter="disliked"].active {
+            background: #ef4444;
+            color: white;
+        }
+
         .albums-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -951,66 +961,9 @@
             display: block;
         }
 
-        .album-actions {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
-            display: flex;
-            justify-content: center;
-            gap: 1rem;
-            padding: 1.5rem 0.5rem 0.5rem;
-            opacity: 0;
-            transform: translateY(10px);
-            transition: all 0.3s ease;
-        }
 
-        .album-card:hover .album-actions {
-            opacity: 1;
-            transform: translateY(0);
-        }
 
-        .action-btn {
-            background: rgba(255, 255, 255, 0.2);
-            border: none;
-            border-radius: 50%;
-            width: 36px;
-            height: 36px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            color: white;
-            font-size: 1.1rem;
-            backdrop-filter: blur(4px);
-            transition: all 0.2s ease;
-        }
 
-        .action-btn:hover {
-            background: rgba(255, 255, 255, 0.4);
-            transform: scale(1.1);
-        }
-
-        .action-btn.active {
-            background: var(--accent-color);
-            color: white;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-        }
-
-        .action-btn.favorite.active {
-            background: #FFD700;
-            /* Gold for favorites */
-            color: #333;
-        }
-
-        .action-btn.disliked.active {
-            background: #ff4444;
-        }
-
-        .action-btn.owned.active {
-            background: #1DB954;
-        }
 
         /* Sidebar Styles */
         .recommendations-layout {
@@ -1091,61 +1044,53 @@
         }
 
         .album-actions {
-            position: absolute;
-            top: 0.5rem;
-            right: 0.5rem;
             display: flex;
-            gap: 0.25rem;
-            opacity: 0;
-            transition: opacity 0.2s;
-        }
-
-        .album-card:hover .album-actions {
-            opacity: 1;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+            justify-content: center;
         }
 
         .action-btn {
-            width: 32px;
-            height: 32px;
+            width: 36px;
+            height: 36px;
             border-radius: 50%;
-            border: none;
+            border: 1px solid var(--border-color);
             cursor: pointer;
             font-size: 16px;
             display: flex;
             align-items: center;
             justify-content: center;
             transition: all 0.2s;
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            backdrop-filter: blur(4px);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
         }
 
         .action-btn:hover {
             transform: scale(1.1);
+            background: var(--border-color);
+            color: var(--text-primary);
         }
 
-        .action-btn.favorite {
-            background: rgba(255, 215, 0, 0.9);
-        }
-
+        /* Active States - Highlighted */
         .action-btn.favorite.active {
             background: #FFD700;
-        }
-
-        .action-btn.owned {
-            background: rgba(34, 197, 94, 0.9);
+            color: black;
+            border-color: #FFD700;
+            box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
         }
 
         .action-btn.owned.active {
             background: #22c55e;
-        }
-
-        .action-btn.disliked {
-            background: rgba(239, 68, 68, 0.9);
+            color: white;
+            border-color: #22c55e;
+            box-shadow: 0 0 10px rgba(34, 197, 94, 0.5);
         }
 
         .action-btn.disliked.active {
             background: #ef4444;
+            color: white;
+            border-color: #ef4444;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
         }
 
         .album-card.hidden-card {
@@ -1250,6 +1195,12 @@
             <button class="filter-btn" data-filter="artists" onclick="filterRecommendations('artists')">
                 Artistas
             </button>
+            <button class="filter-btn" data-filter="owned" onclick="filterRecommendations('owned')">
+                ✓ Colección
+            </button>
+            <button class="filter-btn" data-filter="disliked" onclick="filterRecommendations('disliked')">
+                ✗ Descartes
+            </button>
         </div>
 
         <div class="recommendations-layout">
@@ -1331,7 +1282,7 @@
     <script src="/static/artist-search.js?v=1763926372"></script>
     <script src="/static/app-user-ext.js?v=1763977108"></script>
     <script src="/static/app.js?v=1763986472"></script>
-    <script src="/static/app-user.js?v=1764002000"></script>
+    <script src="/static/app-user.js?v=1764003000"></script>
 </body>
 
 </html>

@@ -255,12 +255,30 @@ class RegenerateRecommendationsRequest(BaseModel):
 @app.get("/users/{user_id}/recommendations")
 async def get_recommendations(user_id: int, include_favorites: bool = True):
     """Get recommendations for the user."""
-    return db.get_recommendations_for_user(user_id, include_favorites)
+    recommendations = db.get_recommendations_for_user(user_id, include_favorites)
+    
+    # Map album_title (DB field) to album_name (frontend field) for compatibility
+    for rec in recommendations:
+        if 'album_title' in rec and 'album_name' not in rec:
+            rec['album_name'] = rec['album_title']
+        if 'cover_url' in rec and rec['cover_url']:
+            rec['image_url'] = rec['cover_url']
+    
+    return recommendations
 
 @app.get("/users/{user_id}/recommendations/favorites")
 async def get_favorites(user_id: int):
     """Get only favorite recommendations."""
-    return db.get_favorite_recommendations(user_id)
+    favorites = db.get_favorite_recommendations(user_id)
+    
+    # Map album_title (DB field) to album_name (frontend field) for compatibility
+    for rec in favorites:
+        if 'album_title' in rec and 'album_name' not in rec:
+            rec['album_name'] = rec['album_title']
+        if 'cover_url' in rec and rec['cover_url']:
+            rec['image_url'] = rec['cover_url']
+    
+    return favorites
 
 @app.patch("/users/{user_id}/recommendations/{rec_id}")
 async def update_recommendation_status(user_id: int, rec_id: int, update: RecommendationStatusUpdate):
