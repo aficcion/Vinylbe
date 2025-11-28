@@ -333,22 +333,23 @@ async function regenerateRecs() {
         async function searchArtists(query) {
             if (!query || query.length < 2) return [];
             try {
-                const res = await apiCall(`/api/lastfm/search?q=${encodeURIComponent(query)}`);
-                // The backend returns { artists: [...] } or just a list
-                return res.artists || res || [];
+                const res = await apiCall(`/api/spotify/search/artists?q=${encodeURIComponent(query)}`);
+                // The backend returns { artists: [...] }
+                return res.artists || [];
             } catch (e) {
                 console.error(e);
                 return [];
             }
         }
 
-        async function selectArtistFromSearch(artistName, mbid) {
+        async function selectArtistFromSearch(artistName, mbid, spotifyId) {
             const uid = getUserId();
             if (!uid) return;
             try {
                 await apiCall(`/users/${uid}/selected-artists`, 'POST', {
                     artist_name: artistName,
                     mbid: mbid,
+                    spotify_id: spotifyId,
                     source: 'manual'
                 });
                 showToast(`Added ${artistName}`, 'success');

@@ -109,7 +109,7 @@ class ArtistSearch {
         resultsGrid.innerHTML = '<div class="loading">Buscando...</div>';
 
         try {
-            const response = await fetch(`/api/lastfm/search?q=${encodeURIComponent(query)}`);
+            const response = await fetch(`/api/spotify/search/artists?q=${encodeURIComponent(query)}`);
             const data = await response.json();
 
             this.searchResults = data.artists || [];
@@ -207,31 +207,19 @@ class ArtistSearch {
                                 recommendations: recs,
                                 timestamp: Date.now()
                             };
-                            console.log(`✓ Cached ${recs.length} recommendations for ${artist.name}`);
+                            console.log(`✓ Cached ${recs.length} recommendations for ${artist.name} (Canonical)`);
                         } else {
-                            this.recommendationsCache[artist.name] = {
-                                status: 'error',
-                                error: 'No albums found',
-                                timestamp: Date.now()
-                            };
-                            console.warn(`⚠ No albums found for ${artist.name}`);
+                            // Fallback to Spotify
+                            console.warn(`⚠ No canonical albums found for ${artist.name}, trying Spotify fallback...`);
+                            await this.fetchSpotifyRecommendations(artist);
                         }
                     } else {
-                        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-                        this.recommendationsCache[artist.name] = {
-                            status: 'error',
-                            error: errorData.detail || `HTTP ${response.status}`,
-                            timestamp: Date.now()
-                        };
-                        console.error(`✗ Failed to get recommendations for ${artist.name}: ${errorData.detail}`);
+                        console.warn(`⚠ Canonical search failed for ${artist.name}, trying Spotify fallback...`);
+                        await this.fetchSpotifyRecommendations(artist);
                     }
                 } catch (error) {
-                    this.recommendationsCache[artist.name] = {
-                        status: 'error',
-                        error: error.message || 'Network error',
-                        timestamp: Date.now()
-                    };
-                    console.error(`✗ Error fetching recommendations for ${artist.name}:`, error);
+                    console.error(`✗ Error fetching canonical recommendations for ${artist.name}:`, error);
+                    await this.fetchSpotifyRecommendations(artist);
                 } finally {
                     this.loadingArtists.delete(artist.name);
                     this.pendingPromises.delete(artist.name);
@@ -240,6 +228,48 @@ class ArtistSearch {
             })();
 
             this.pendingPromises.set(artist.name, fetchPromise);
+        }
+    }
+
+    async fetchSpotifyRecommendations(artist) {
+        try {
+            const response = await fetch('/api/recommendations/spotify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ artist_name: artist.name, top_albums: 5 })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                const recs = data.recommendations || [];
+                if (recs.length > 0) {
+                    this.recommendationsCache[artist.name] = {
+                        status: 'success',
+                        recommendations: recs,
+                        timestamp: Date.now()
+                    };
+                    console.log(`✓ Cached ${recs.length} recommendations for ${artist.name} (Spotify Fallback)`);
+                } else {
+                    this.recommendationsCache[artist.name] = {
+                        status: 'error',
+                        error: 'No albums found on Spotify',
+                        timestamp: Date.now()
+                    };
+                }
+            } else {
+                const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+                this.recommendationsCache[artist.name] = {
+                    status: 'error',
+                    error: errorData.detail || `HTTP ${response.status}`,
+                    timestamp: Date.now()
+                };
+            }
+        } catch (error) {
+            this.recommendationsCache[artist.name] = {
+                status: 'error',
+                error: error.message || 'Network error',
+                timestamp: Date.now()
+            };
         }
     }
 
@@ -355,7 +385,7 @@ class ArtistSearch {
 
         const fetchAndAddArtist = async (name) => {
             try {
-                const response = await fetch(`/api/lastfm/search?q=${encodeURIComponent(name)}`);
+                const response = await fetch(`/api/spotify/search/artists?q=${encodeURIComponent(name)}`);
                 if (response.ok) {
                     const data = await response.json();
                     if (data.artists && data.artists.length > 0) {
@@ -364,7 +394,7 @@ class ArtistSearch {
                         await this.addArtist(artist);
                         return { success: true, name };
                     } else {
-                        console.warn(`⚠ Could not find artist ${name} in Last.fm`);
+                        console.warn(`⚠ Could not find artist ${name} in Spotify`);
                         return { success: false, name, reason: 'Not found' };
                     }
                 } else {

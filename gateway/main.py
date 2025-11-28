@@ -17,12 +17,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from libs.shared.models import ServiceHealth
 from libs.shared.utils import log_event
-from gateway import db_utils, seeder, db
+from gateway import db_utils, seeder, db, recommendation_logger
 
 DISCOGS_SERVICE_URL = os.getenv("DISCOGS_SERVICE_URL", "http://127.0.0.1:3001")
 RECOMMENDER_SERVICE_URL = os.getenv("RECOMMENDER_SERVICE_URL", "http://127.0.0.1:3002")
 PRICING_SERVICE_URL = os.getenv("PRICING_SERVICE_URL", "http://127.0.0.1:3003")
 LASTFM_SERVICE_URL = os.getenv("LASTFM_SERVICE_URL", "http://127.0.0.1:3004")
+SPOTIFY_SERVICE_URL = os.getenv("SPOTIFY_SERVICE_URL", "http://127.0.0.1:3005")
 
 http_client: Optional[httpx.AsyncClient] = None
 
@@ -81,6 +82,7 @@ async def health_check():
         ("recommender", RECOMMENDER_SERVICE_URL),
         ("pricing", PRICING_SERVICE_URL),
         ("lastfm", LASTFM_SERVICE_URL),
+        ("spotify", SPOTIFY_SERVICE_URL),
     ]:
         try:
             resp = await http_client.get(f"{service_url}/health", timeout=5.0)
@@ -199,6 +201,7 @@ class LastFmProfileUpdate(BaseModel):
 class SelectedArtistCreate(BaseModel):
     artist_name: str
     mbid: Optional[str] = None
+    spotify_id: Optional[str] = None
     source: str = "manual"
 
 @app.get("/users/{user_id}/profile/lastfm")
@@ -228,7 +231,7 @@ async def get_selected_artists(user_id: int):
 async def add_selected_artist(user_id: int, artist: SelectedArtistCreate):
     """Add an artist to the user's selection."""
     try:
-        db.add_user_selected_artist(user_id, artist.artist_name, artist.mbid, artist.source)
+        db.add_user_selected_artist(user_id, artist.artist_name, artist.mbid, artist.source, artist.spotify_id)
         return {"status": "added", "artist": artist.artist_name}
     except Exception as e:
         log_event("gateway", "ERROR", f"Add artist failed: {str(e)}")
@@ -309,6 +312,17 @@ async def regenerate_recommendations_endpoint(user_id: int, request: RegenerateR
 async def lastfm_callback_alias(token: str):
     """Alias for /auth/lastfm/callback to maintain compatibility with configured redirect URIs"""
     return await lastfm_callback(token)
+
+
+@app.get("/api/mosaic")
+async def get_mosaic_albums():
+    """Get random albums for the mosaic display."""
+    try:
+        albums = db.get_random_albums_with_covers(limit=500)
+        return {"albums": albums}
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Mosaic fetch failed: {str(e)}")
+        return {"albums": []}
 
 # ---------------------------------------------------------------------------
 # API aliases for frontend compatibility (prefixed with /api)
@@ -670,23 +684,67 @@ async def enrich_album_with_discogs(album: dict, idx: int, total: int, semaphore
 
 
 
-@app.get("/api/lastfm/search")
-async def search_artists(q: str):
+
+
+
+@app.get("/api/spotify/search/artists")
+async def search_spotify_artists(q: str):
     if not http_client:
         raise HTTPException(status_code=500, detail="HTTP client not initialized")
     
-    if len(q) < 4:
-        raise HTTPException(status_code=400, detail="Query must be at least 4 characters")
+    if len(q) < 2:
+        raise HTTPException(status_code=400, detail="Query must be at least 2 characters")
     
     try:
-        log_event("gateway", "INFO", f"Searching artists: {q}")
-        resp = await http_client.get(f"{LASTFM_SERVICE_URL}/search?q={q}")
+        log_event("gateway", "INFO", f"Searching Spotify artists: {q}")
+        resp = await http_client.get(f"{SPOTIFY_SERVICE_URL}/search/artists", params={"q": q, "limit": 10})
         data = resp.json()
-        log_event("gateway", "INFO", f"Found {len(data.get('artists', []))} artists")
+        log_event("gateway", "INFO", f"Found {data.get('total', 0)} artists on Spotify")
         return data
     except Exception as e:
-        log_event("gateway", "ERROR", f"Artist search failed: {str(e)}")
+        log_event("gateway", "ERROR", f"Spotify artist search failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+
+@app.post("/api/recommendations/artist-single")
+async def get_artist_single_recommendation(request: dict):
+    """Get recommendations for a single artist (canonical source: Discogs/MusicBrainz)"""
+    if not http_client:
+        raise HTTPException(status_code=500, detail="HTTP client not initialized")
+    
+    artist_name = request.get("artist_name")
+    user_id = request.get("user_id")  # Optional: for logging purposes
+    
+    if not artist_name:
+        raise HTTPException(status_code=400, detail="artist_name is required")
+    
+    try:
+        resp = await http_client.post(
+            f"{RECOMMENDER_SERVICE_URL}/artist-single-recommendation",
+            json=request
+        )
+        data = resp.json()
+        
+        # Log the recommendation generation (always log, use user_id=0 if not provided)
+        recommendations = data.get("recommendations", [])
+        if recommendations:
+            recommendation_logger.log_recommendation_generation(
+                user_id=user_id or 0,
+                artist_name=artist_name,
+                source="canonical",
+                recommendations=recommendations,
+                metadata={
+                    "total_returned": data.get("total", 0),
+                    "endpoint": "/api/recommendations/artist-single"
+                }
+            )
+            log_event("gateway", "INFO", 
+                     f"Logged {len(recommendations)} canonical recommendations for {artist_name}")
+        
+        return data
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Artist single recommendation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get recommendations: {str(e)}")
 
 
 @app.post("/api/lastfm/top-artists")
@@ -694,12 +752,61 @@ async def get_lastfm_top_artists(request: dict):
     if not http_client:
         raise HTTPException(status_code=500, detail="HTTP client not initialized")
     
+    artist_name = request.get("artist_name")
+    
+    if not artist_name:
+        raise HTTPException(status_code=400, detail="artist_name is required")
+    
     try:
-        resp = await http_client.post(f"{LASTFM_SERVICE_URL}/top-artists", json=request)
+        resp = await http_client.post(
+            f"{RECOMMENDER_SERVICE_URL}/artist-single-recommendation",
+            json=request
+        )
         return resp.json()
     except Exception as e:
-        log_event("gateway", "ERROR", f"Top artists fetch failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch top artists: {str(e)}")
+        log_event("gateway", "ERROR", f"Single artist recommendation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get recommendations: {str(e)}")
+
+
+@app.post("/api/recommendations/spotify")
+async def get_spotify_recommendations(request: dict):
+    """Get recommendations using Spotify (fast fallback)"""
+    if not http_client:
+        raise HTTPException(status_code=500, detail="HTTP client not initialized")
+    
+    artist_name = request.get("artist_name")
+    user_id = request.get("user_id")  # Optional: for logging purposes
+    
+    if not artist_name:
+        raise HTTPException(status_code=400, detail="artist_name is required")
+    
+    try:
+        resp = await http_client.post(
+            f"{RECOMMENDER_SERVICE_URL}/spotify-recommendations",
+            json=request
+        )
+        data = resp.json()
+        
+        # Log the recommendation generation (always log, use user_id=0 if not provided)
+        recommendations = data.get("recommendations", [])
+        if recommendations:
+            recommendation_logger.log_recommendation_generation(
+                user_id=user_id or 0,
+                artist_name=artist_name,
+                source="spotify",
+                recommendations=recommendations,
+                metadata={
+                    "total_returned": data.get("total", 0),
+                    "endpoint": "/api/recommendations/spotify"
+                }
+            )
+            log_event("gateway", "INFO", 
+                     f"Logged {len(recommendations)} Spotify recommendations for {artist_name}")
+        
+        return data
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Spotify recommendation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get Spotify recommendations: {str(e)}")
 
 
 @app.post("/api/lastfm/recommendations")

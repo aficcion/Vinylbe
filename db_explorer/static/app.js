@@ -115,6 +115,7 @@ class DatabaseExplorer {
             const data = await response.json();
 
             this.renderStats(data.table_counts);
+            this.renderMosaic(data.mosaic_albums);
             this.renderTopArtists(data.top_artists);
             this.renderTopAlbums(data.top_albums);
         } catch (error) {
@@ -138,6 +139,26 @@ class DatabaseExplorer {
             <div class="stat-card">
                 <div class="stat-label">${stat.icon} ${stat.label}</div>
                 <div class="stat-value">${stat.value.toLocaleString()}</div>
+            </div>
+        `).join('');
+    }
+
+    renderMosaic(albums) {
+        const grid = document.getElementById('mosaicGrid');
+        if (!grid || !albums || albums.length === 0) return;
+
+        // Shuffle array for randomness on frontend too
+        const shuffled = [...albums].sort(() => 0.5 - Math.random());
+
+        // Take enough to fill the grid (approx 50)
+        const displayAlbums = shuffled.slice(0, 50);
+
+        grid.innerHTML = displayAlbums.map(album => `
+            <div class="mosaic-item" title="${this.escapeHtml(album.title)}">
+                <img src="${album.cover_url}" 
+                     loading="lazy"
+                     alt="${this.escapeHtml(album.title)}"
+                     onerror="this.style.display='none'">
             </div>
         `).join('');
     }

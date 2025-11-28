@@ -75,6 +75,7 @@ def init_db() -> None:
                 user_id INTEGER NOT NULL,
                 artist_name TEXT NOT NULL,
                 mbid TEXT,
+                spotify_id TEXT,
                 source TEXT NOT NULL CHECK (source IN ('manual', 'lastfm_suggestion')),
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
@@ -95,6 +96,13 @@ def init_db() -> None:
             );
             """
         )
+        
+        # Migration: Add spotify_id column if it doesn't exist
+        try:
+            cur.execute("ALTER TABLE user_selected_artist ADD COLUMN spotify_id TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column likely already exists
+            
         conn.commit()
     finally:
         conn.close()
@@ -274,6 +282,7 @@ def add_user_selected_artist(
     artist_name: str,
     mbid: Optional[str] = None,
     source: str = "manual",
+    spotify_id: Optional[str] = None,
 ) -> None:
     """Insert a new selected artist for the user.
 
@@ -286,8 +295,8 @@ def add_user_selected_artist(
     try:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO user_selected_artist (user_id, artist_name, mbid, source) VALUES (?, ?, ?, ?)",
-            (user_id, artist_name, mbid, source),
+            "INSERT INTO user_selected_artist (user_id, artist_name, mbid, source, spotify_id) VALUES (?, ?, ?, ?, ?)",
+            (user_id, artist_name, mbid, source, spotify_id),
         )
         conn.commit()
     finally:
@@ -348,7 +357,16 @@ def regenerate_recommendations(user_id: int, new_recs: List[Dict[str, Any]]) -> 
             # Handle both album_title (DB convention) and album_name (API convention)
             album = rec.get("album_title") or rec.get("album_name")
             mbid = rec.get("album_mbid")
-            source = rec.get("source", "mixed")
+            
+            # Sanitize source field to ensure it matches DB constraints
+            # Valid values: 'lastfm', 'manual', 'mixed'
+            raw_source = rec.get("source", "mixed")
+            if raw_source in {"artist_based", "spotify"}:
+                source = "manual"  # Map artist_based and spotify to manual
+            elif raw_source in {"lastfm", "manual", "mixed"}:
+                source = raw_source
+            else:
+                source = "mixed"  # Fallback for any other invalid value
 
             if not artist or not album:
                 log_event("gateway", "ERROR", f"Regenerate failed: missing artist or album in {rec}")
@@ -417,7 +435,8 @@ def get_recommendations_for_user(user_id: int, include_favorites: bool = True) -
             SELECT 
                 r.*, 
                 a.cover_url as cover_url,
-                ar.image_url as artist_image_url
+                ar.image_url as artist_image_url,
+                a.is_partial
             FROM recommendation r
             LEFT JOIN artists ar ON ar.name = r.artist_name COLLATE NOCASE
             LEFT JOIN albums a ON 
@@ -443,7 +462,8 @@ def get_favorite_recommendations(user_id: int) -> List[Dict[str, Any]]:
             SELECT 
                 r.*, 
                 a.cover_url as cover_url,
-                ar.image_url as artist_image_url
+                ar.image_url as artist_image_url,
+                a.is_partial
             FROM recommendation r
             LEFT JOIN artists ar ON ar.name = r.artist_name COLLATE NOCASE
             LEFT JOIN albums a ON 
@@ -500,5 +520,28 @@ def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
         cur = conn.cursor()
         cur.execute("SELECT * FROM user WHERE id = ?", (user_id,))
         return cur.fetchone()
+    finally:
+        conn.close()
+
+
+def get_random_albums_with_covers(limit: int = 50) -> List[Dict[str, Any]]:
+    """Fetch random albums that have a cover URL."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, title, cover_url, artist_id
+            FROM albums
+            WHERE cover_url IS NOT NULL AND cover_url != ''
+            ORDER BY RANDOM()
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        return cur.fetchall()
+    except sqlite3.OperationalError:
+        # Fallback if albums table doesn't exist or other DB error
+        return []
     finally:
         conn.close()

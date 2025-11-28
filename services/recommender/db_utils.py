@@ -30,7 +30,9 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             name TEXT NOT NULL UNIQUE,
             mbid TEXT,
             image_url TEXT,
-            last_updated TIMESTAMP
+            image_url TEXT,
+            last_updated TIMESTAMP,
+            is_partial INTEGER DEFAULT 0
         )
         """
     )
@@ -48,6 +50,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             votes INTEGER,
             cover_url TEXT,
             last_updated TIMESTAMP,
+            is_partial INTEGER DEFAULT 0,
             FOREIGN KEY (artist_id) REFERENCES artists(id)
         )
         """
@@ -59,16 +62,67 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         pass  # Column likely already exists
         
+    # Migration: Add is_partial column if it doesn't exist
+    try:
+        cur.execute("ALTER TABLE albums ADD COLUMN is_partial INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # Column likely already exists
+        
+    # Migration: Add is_partial column to artists if it doesn't exist
+    try:
+        cur.execute("ALTER TABLE artists ADD COLUMN is_partial INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # Column likely already exists
+        # Migration: Add spotify_id column if it doesn't exist
+    try:
+        cur.execute("ALTER TABLE artists ADD COLUMN spotify_id TEXT UNIQUE")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_artists_spotify_id ON artists(spotify_id)")
+    except sqlite3.OperationalError:
+        pass  # Column likely already exists
+
+    try:
+        cur.execute("ALTER TABLE albums ADD COLUMN spotify_id TEXT")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_albums_spotify_id ON albums(spotify_id)")
+    except sqlite3.OperationalError:
+        pass  # Column likely already exists
+        
     conn.commit()
 
-def get_cached_album(artist_name: str, album_name: str, mbid: str = None) -> dict:
+def get_cached_album(artist_name: str, album_name: str, mbid: str = None, spotify_id: str = None) -> dict:
     """Check if album exists in cache"""
     try:
         conn = get_db_connection()
         try:
             cur = conn.cursor()
             
-            # Try matching by MBID first if available
+            # 1. Try matching by Spotify ID
+            if spotify_id:
+                query_spotify = """
+                    SELECT 
+                        a.id as album_id,
+                        a.title,
+                        a.year,
+                        a.mbid,
+                        a.spotify_id,
+                        a.discogs_master_id,
+                        a.discogs_release_id,
+                        a.rating,
+                        a.votes,
+                        a.cover_url,
+                        a.is_partial,
+                        ar.name as artist_name
+                    FROM albums a
+                    JOIN artists ar ON a.artist_id = ar.id
+                    WHERE a.spotify_id = ?
+                    LIMIT 1
+                """
+                cur.execute(query_spotify, (spotify_id,))
+                result = cur.fetchone()
+                if result:
+                    log_event("recommender-db", "DEBUG", f"✓ Cache HIT (Spotify ID): {spotify_id}")
+                    return result
+
+            # 2. Try matching by MBID
             if mbid:
                 query_mbid = """
                     SELECT 
@@ -76,11 +130,13 @@ def get_cached_album(artist_name: str, album_name: str, mbid: str = None) -> dic
                         a.title,
                         a.year,
                         a.mbid,
+                        a.spotify_id,
                         a.discogs_master_id,
                         a.discogs_release_id,
                         a.rating,
                         a.votes,
                         a.cover_url,
+                        a.is_partial,
                         ar.name as artist_name
                     FROM albums a
                     JOIN artists ar ON a.artist_id = ar.id
@@ -93,18 +149,20 @@ def get_cached_album(artist_name: str, album_name: str, mbid: str = None) -> dic
                     log_event("recommender-db", "DEBUG", f"✓ Cache HIT (MBID): {mbid}")
                     return result
 
-            # Fallback to name matching
+            # 3. Fallback to name matching
             query = """
                 SELECT 
                     a.id as album_id,
                     a.title,
                     a.year,
                     a.mbid,
+                    a.spotify_id,
                     a.discogs_master_id,
                     a.discogs_release_id,
                     a.rating,
                     a.votes,
                     a.cover_url,
+                    a.is_partial,
                     ar.name as artist_name
                 FROM albums a
                 JOIN artists ar ON a.artist_id = ar.id
@@ -127,17 +185,22 @@ def get_cached_album(artist_name: str, album_name: str, mbid: str = None) -> dic
         log_event("recommender-db", "ERROR", f"Error fetching album: {str(e)}")
         return None
 
-def create_basic_album_entry(artist_name: str, album_name: str, cover_url: str = None, mbid: str = None) -> bool:
+def create_basic_album_entry(artist_name: str, album_name: str, cover_url: str = None, mbid: str = None, spotify_id: str = None, artist_spotify_id: str = None) -> bool:
     """Create basic artist and album entries"""
     try:
         conn = get_db_connection()
         try:
             cur = conn.cursor()
-            artist_id = _get_or_create_artist(cur, artist_name)
+            artist_id = _get_or_create_artist(cur, artist_name, artist_spotify_id)
             
-            # Check existence by MBID or Name
+            # Check existence by Spotify ID, MBID or Name
             existing = None
-            if mbid:
+            
+            if spotify_id:
+                cur.execute("SELECT id FROM albums WHERE spotify_id = ?", (spotify_id,))
+                existing = cur.fetchone()
+            
+            if not existing and mbid:
                 cur.execute("SELECT id FROM albums WHERE mbid = ?", (mbid,))
                 existing = cur.fetchone()
             
@@ -150,18 +213,39 @@ def create_basic_album_entry(artist_name: str, album_name: str, cover_url: str =
                 existing = cur.fetchone()
             
             if existing:
-                # Update MBID if missing
+                # Update IDs if missing
+                updates = []
+                params = []
                 if mbid:
-                    cur.execute("UPDATE albums SET mbid = ? WHERE id = ? AND mbid IS NULL", (mbid, existing['id']))
+                    updates.append("mbid = ?")
+                    params.append(mbid)
+                if spotify_id:
+                    updates.append("spotify_id = ?")
+                    params.append(spotify_id)
+                
+                if updates:
+                    params.append(existing['id'])
+                    # Only update if null
+                    where_clauses = [f"{col.split(' =')[0]} IS NULL" for col in updates]
+                    # This logic is a bit complex for single update, let's just update if provided
+                    # Actually, better to only update if currently NULL to avoid overwriting
+                    
+                    # Simplified: just try to update both if provided
+                    if mbid:
+                        cur.execute("UPDATE albums SET mbid = ? WHERE id = ? AND mbid IS NULL", (mbid, existing['id']))
+                    if spotify_id:
+                        cur.execute("UPDATE albums SET spotify_id = ? WHERE id = ? AND spotify_id IS NULL", (spotify_id, existing['id']))
+                    
                     conn.commit()
+                    
                 log_event("recommender-db", "DEBUG", f"Album exists: {artist_name} - {album_name}")
                 return False
             
             insert_album = """
-                INSERT INTO albums (artist_id, title, cover_url, mbid, last_updated)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO albums (artist_id, title, cover_url, mbid, spotify_id, last_updated, is_partial)
+                VALUES (?, ?, ?, ?, ?, ?, 1)
             """
-            cur.execute(insert_album, (artist_id, album_name, cover_url, mbid, datetime.now()))
+            cur.execute(insert_album, (artist_id, album_name, cover_url, mbid, spotify_id, datetime.now()))
             conn.commit()
             
             log_event("recommender-db", "DEBUG", f"✓ Created album: {artist_name} - {album_name}")
@@ -172,23 +256,33 @@ def create_basic_album_entry(artist_name: str, album_name: str, cover_url: str =
         log_event("recommender-db", "ERROR", f"Error creating album: {artist_name} - {album_name}: {str(e)}")
         return False
 
-def _get_or_create_artist(cur, artist_name: str) -> int:
+def _get_or_create_artist(cur, artist_name: str, spotify_id: str = None) -> int:
     """Get or create artist (cursor transaction)"""
+    
+    # Try by Spotify ID first
+    if spotify_id:
+        cur.execute("SELECT id FROM artists WHERE spotify_id = ?", (spotify_id,))
+        result = cur.fetchone()
+        if result:
+            return result['id']
+            
+    # Try by name
     check_query = "SELECT id FROM artists WHERE LOWER(name) = LOWER(?)"
     cur.execute(check_query, (artist_name,))
     result = cur.fetchone()
     
     if result:
+        # Update spotify_id if missing
+        if spotify_id:
+            cur.execute("UPDATE artists SET spotify_id = ? WHERE id = ? AND spotify_id IS NULL", (spotify_id, result['id']))
         return result['id']
     
-    insert_query = """
-        INSERT INTO artists (name, last_updated)
-        VALUES (?, ?)
-        RETURNING id
-    """
-    # SQLite doesn't support RETURNING in older versions, but we can use lastrowid
+    # Create new
     try:
-        cur.execute("INSERT INTO artists (name, last_updated) VALUES (?, ?)", (artist_name, datetime.now()))
+        cur.execute(
+            "INSERT INTO artists (name, spotify_id, last_updated, is_partial) VALUES (?, ?, ?, 1)", 
+            (artist_name, spotify_id, datetime.now())
+        )
         return cur.lastrowid
     except sqlite3.Error:
         # Fallback if insert fails (race condition?)

@@ -15,6 +15,8 @@ from .scoring_engine import ScoringEngine
 from .album_aggregator import AlbumAggregator
 from .artist_recommendations import get_artist_based_recommendations, get_artist_studio_albums
 
+SPOTIFY_SERVICE_URL = os.getenv("SPOTIFY_SERVICE_URL", "http://127.0.0.1:3005")
+
 scoring_engine = None
 album_aggregator = None
 
@@ -40,6 +42,7 @@ class SingleArtistRequest(BaseModel):
     artist_name: str
     top_albums: int = 3
     csv_mode: bool = False
+    cache_only: bool = False
 
 
 @asynccontextmanager
@@ -134,39 +137,51 @@ async def lastfm_albums_recommendations(albums: List[dict]):
                         cache_misses += 1
                         
                         cover_url = None
+                        spotify_album_id = None
+                        spotify_artist_id = None
+                        
                         try:
+                            # Use Spotify for cover and IDs
                             resp = await client.get(
-                                f"http://localhost:3001/search-album",
+                                f"{SPOTIFY_SERVICE_URL}/search/album",
                                 params={"artist": artist_name, "album": album_name}
                             )
                             if resp.status_code == 200:
                                 data = resp.json()
-                                cover_url = data.get("cover_url")
+                                cover_url = data.get("image_url")
+                                spotify_album_id = data.get("id")
+                                spotify_artist_id = data.get("artist_id")
+                                
                                 if cover_url:
                                     covers_fetched += 1
                                     log_event("recommender-service", "DEBUG", 
-                                             f"✓ Cover fetched: {artist_name} - {album_name}")
+                                             f"✓ Spotify data fetched: {artist_name} - {album_name}")
                         except Exception as e:
                             log_event("recommender-service", "WARNING", 
-                                     f"Cover fetch failed: {artist_name} - {album_name}: {str(e)}")
+                                     f"Spotify fetch failed: {artist_name} - {album_name}: {str(e)}")
                         
-                        await loop.run_in_executor(
-                            executor, db_utils.create_basic_album_entry,
-                            artist_name, album_name, cover_url, mbid
-                        )
-                        
-                        all_recommendations.append({
-                            "artist_name": artist_name,
-                            "album_name": album_name,
-                            "year": None,
-                            "discogs_master_id": None,
-                            "discogs_release_id": None,
-                            "rating": None,
-                            "votes": None,
-                            "cover_url": cover_url,
-                            "lastfm_playcount": playcount,
-                            "source": "lastfm"
-                        })
+                        if cover_url:
+                            await loop.run_in_executor(
+                                executor, db_utils.create_basic_album_entry,
+                                artist_name, album_name, cover_url, mbid, spotify_album_id, spotify_artist_id
+                            )
+                            
+                            all_recommendations.append({
+                                "artist_name": artist_name,
+                                "album_name": album_name,
+                                "year": None,
+                                "discogs_master_id": None,
+                                "discogs_release_id": None,
+                                "rating": None,
+                                "votes": None,
+                                "cover_url": cover_url,
+                                "spotify_id": spotify_album_id,
+                                "lastfm_playcount": playcount,
+                                "source": "lastfm"
+                            })
+                        else:
+                            log_event("recommender-service", "INFO", 
+                                     f"Skipped non-vinyl album: {artist_name} - {album_name}")
                         
                 except Exception as e:
                     log_event("recommender-service", "ERROR", 
@@ -484,7 +499,8 @@ async def artist_single_recommendation(request: SingleArtistRequest):
             discogs_key,
             discogs_secret,
             top_n=request.top_albums,
-            csv_mode=request.csv_mode
+            csv_mode=request.csv_mode,
+            cache_only=request.cache_only
         )
         
         recommendations = []
@@ -508,4 +524,105 @@ async def artist_single_recommendation(request: SingleArtistRequest):
         return {"recommendations": recommendations, "total": len(recommendations), "artist_name": request.artist_name}
     except Exception as e:
         log_event("recommender-service", "ERROR", f"Failed to generate recommendations for {request.artist_name}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate recommendations: {str(e)}")
+
+
+@app.post("/spotify-recommendations")
+async def spotify_recommendations(request: SingleArtistRequest):
+    """Generate recommendations using Spotify (fallback/lightweight mode)"""
+    import time
+    import httpx
+    from . import db_utils
+    
+    start_time = time.time()
+    artist_name = request.artist_name
+    
+    log_event("recommender-service", "INFO", f"Generating Spotify recommendations for: {artist_name}")
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # 1. Search artist to get ID
+            search_resp = await client.get(
+                f"{SPOTIFY_SERVICE_URL}/search/artists",
+                params={"q": artist_name, "limit": 1}
+            )
+            search_data = search_resp.json()
+            artists = search_data.get("artists", [])
+            
+            if not artists:
+                raise HTTPException(status_code=404, detail="Artist not found on Spotify")
+            
+            artist = artists[0]
+            spotify_artist_id = artist["id"]
+            artist_name = artist["name"]  # Use canonical name
+            
+            # 2. Get top albums
+            albums_resp = await client.get(
+                f"{SPOTIFY_SERVICE_URL}/artist/{spotify_artist_id}/albums",
+                params={"limit": request.top_albums + 5}  # Fetch a few more to filter
+            )
+            albums_data = albums_resp.json()
+            spotify_albums = albums_data.get("albums", [])
+            
+            recommendations = []
+            
+            # 3. Process albums (check cache or create partial)
+            for album in spotify_albums[:request.top_albums]:
+                # Check cache
+                cached = db_utils.get_cached_album(
+                    artist_name, 
+                    album["name"], 
+                    spotify_id=album["id"]
+                )
+                
+                if cached:
+                    # Use cached data (might be full or partial)
+                    rec = {
+                        "album_name": cached["title"],
+                        "artist_name": cached["artist_name"],
+                        "year": cached.get("year"),
+                        "rating": cached.get("rating"),
+                        "votes": cached.get("votes"),
+                        "discogs_master_id": cached.get("discogs_master_id"),
+                        "image_url": cached.get("cover_url"),
+                        "spotify_id": cached.get("spotify_id"),
+                        "is_partial": cached.get("is_partial", 0),
+                        "source": "spotify"
+                    }
+                else:
+                    # Create partial entry
+                    db_utils.create_basic_album_entry(
+                        artist_name,
+                        album["name"],
+                        cover_url=album["image_url"],
+                        spotify_id=album["id"],
+                        artist_spotify_id=spotify_artist_id
+                    )
+                    
+                    rec = {
+                        "album_name": album["name"],
+                        "artist_name": artist_name,
+                        "year": album.get("release_date")[:4] if album.get("release_date") else None,
+                        "rating": None,
+                        "votes": None,
+                        "image_url": album["image_url"],
+                        "spotify_id": album["id"],
+                        "is_partial": 1,
+                        "source": "spotify"
+                    }
+                
+                recommendations.append(rec)
+            
+            elapsed = time.time() - start_time
+            log_event("recommender-service", "INFO", 
+                     f"Generated {len(recommendations)} Spotify recommendations for {artist_name} in {elapsed:.2f}s")
+            
+            return {
+                "recommendations": recommendations, 
+                "total": len(recommendations), 
+                "artist_name": artist_name
+            }
+            
+    except Exception as e:
+        log_event("recommender-service", "ERROR", f"Spotify recommendations failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate recommendations: {str(e)}")

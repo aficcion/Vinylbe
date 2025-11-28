@@ -171,24 +171,90 @@ async function generateAndSaveRecommendations(userId, lastfmUsername) {
 
                 if (artistNames.length > 0) {
                     console.log(`Found ${artistNames.length} selected artists:`, artistNames);
-                    // 2b. Generate recommendations for them
-                    const recsResp = await fetch('/api/recommendations/artists', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ artist_names: artistNames })
-                    });
 
-                    if (recsResp.ok) {
-                        const recsData = await recsResp.json();
-                        if (recsData.recommendations) {
-                            manualRecs = formatArtistRecommendations(recsData.recommendations);
-                            console.log(`✓ Generated ${manualRecs.length} recommendations from selected artists`);
+                    // Show progress modal
+                    showProgressModal('Generando Recomendaciones');
+
+                    // 2b. Generate recommendations for each artist (Frontend Loop with Fallback)
+                    let completed = 0;
+                    const total = artistNames.length;
+
+                    for (const artistName of artistNames) {
+                        updateProgressUI(completed, total, `Procesando ${artistName}...`, artistName);
+
+                        try {
+                            // Try Canonical (Cache-only first - FAST)
+                            let recs = [];
+                            try {
+                                const resp = await fetch('/api/recommendations/artist-single', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        artist_name: artistName,
+                                        top_albums: 3,
+                                        user_id: userId,  // For logging
+                                        cache_only: true  // Only check cache, don't do slow lookups
+                                    })
+                                });
+
+                                if (resp.ok) {
+                                    const data = await resp.json();
+                                    if (data.recommendations && data.recommendations.length > 0) {
+                                        recs = data.recommendations;
+                                        console.log(`✓ Cache hit for ${artistName}: ${recs.length} recs`);
+                                    } else {
+                                        console.log(`⚠ Cache miss for ${artistName}, using Spotify`);
+                                    }
+                                }
+                            } catch (e) {
+                                console.warn(`Canonical cache check failed for ${artistName}`, e);
+                            }
+
+                            // Fallback to Spotify if no cache
+                            if (recs.length === 0) {
+                                console.log(`→ Using Spotify for ${artistName}`);
+                                try {
+                                    const resp = await fetch('/api/recommendations/spotify', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                            artist_name: artistName,
+                                            top_albums: 5,
+                                            user_id: userId  // For logging
+                                        })
+                                    });
+
+                                    if (resp.ok) {
+                                        const data = await resp.json();
+                                        if (data.recommendations && data.recommendations.length > 0) {
+                                            recs = data.recommendations;
+                                            console.log(`✓ Spotify recs for ${artistName}: ${recs.length}`);
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.warn(`Spotify fallback failed for ${artistName}`, e);
+                                }
+                            }
+
+                            if (recs.length > 0) {
+                                manualRecs.push(...recs);
+                            }
+
+                        } catch (e) {
+                            console.error(`Error processing ${artistName}:`, e);
                         }
+
+                        completed++;
+                        updateProgressUI(completed, total, `Completado ${artistName}`, artistName);
                     }
+
+                    hideProgressModal();
+                    console.log(`✓ Generated ${manualRecs.length} recommendations from selected artists`);
                 }
             }
         } catch (e) {
             console.warn('Error fetching manual artist recommendations:', e);
+            hideProgressModal();
         }
 
         // 3. Load existing recommendations to merge (preserve status)
@@ -330,13 +396,67 @@ function syncAlbumStatusesFromRecs(recommendations) {
 
 
 
-
 // Legacy callback handler - no longer needed as callback.html handles everything
 // Kept as no-op for backwards compatibility
 async function handleLastfmCallback() {
     // All callback logic now handled in callback.html
     // This function is kept to avoid breaking existing code that calls it
 }
+
+// Mosaic Logic
+async function loadMosaic() {
+    const grid = document.getElementById('mosaicGrid');
+    if (!grid) return;
+
+    try {
+        const response = await fetch('/api/mosaic');
+        const data = await response.json();
+        const albums = data.albums || [];
+
+        if (albums.length === 0) return;
+
+        // Ensure we have enough items to fill the grid (target 500 to account for broken images)
+        let displayAlbums = [...albums];
+        const targetCount = 500;
+
+        // Duplicate albums if we don't have enough
+        while (displayAlbums.length < targetCount && displayAlbums.length > 0) {
+            displayAlbums = [...displayAlbums, ...albums];
+        }
+
+        // Shuffle the full set
+        const shuffled = displayAlbums.sort(() => 0.5 - Math.random());
+
+        // Slice to exact target
+        const finalSet = shuffled.slice(0, targetCount);
+
+        grid.innerHTML = finalSet.map(album => `
+            <div class="mosaic-item" title="${escapeHtml(album.title)}">
+                <img src="${album.cover_url}" 
+                     loading="lazy"
+                     alt="${escapeHtml(album.title)}"
+                     onerror="this.parentElement.style.display='none'">
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading mosaic:', error);
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadMosaic();
+    // ... existing init code
+});
 
 // Show/hide loading state (legacy, keep for simple loads)
 function showLoading(show, message = 'Cargando tus recomendaciones...') {
@@ -834,6 +954,7 @@ function createAlbumCard(rec) {
     card.innerHTML = `
         <div class="album-cover">
             <img src="${cover}" alt="${album}" loading="lazy">
+            ${rec.is_partial ? '<div class="partial-badge" title="Información pendiente de enriquecer">⏳</div>' : ''}
         </div>
         <div class="album-info">
             <h3>${album}</h3>
@@ -1297,7 +1418,7 @@ async function handleArtistSelection(selectedArtists, searchComponent) {
 
 function formatArtistRecommendations(recommendations) {
     return recommendations.map(rec => {
-        if (rec.source === 'artist_based') {
+        if (rec.source === 'artist_based' || rec.source === 'spotify') {
             return {
                 album_name: rec.album_name,
                 artist_name: rec.artist_name,
@@ -1306,6 +1427,7 @@ function formatArtistRecommendations(recommendations) {
                 rating: rec.rating,
                 votes: rec.votes,
                 year: rec.year,
+                is_partial: rec.is_partial, // Preserve is_partial flag
                 source: 'manual'  // Map to 'manual' for DB constraint
             };
         }

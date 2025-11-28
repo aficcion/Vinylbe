@@ -92,6 +92,16 @@ def api_summary():
     """)
     recent_albums = cursor.fetchall()
     
+    # Mosaic albums (random 50 with covers)
+    cursor.execute("""
+        SELECT id, title, cover_url, artist_id
+        FROM albums
+        WHERE cover_url IS NOT NULL AND cover_url != ''
+        ORDER BY RANDOM()
+        LIMIT 50
+    """)
+    mosaic_albums = cursor.fetchall()
+    
     # User stats
     cursor.execute("""
         SELECT u.id, u.display_name, u.email,
@@ -111,6 +121,7 @@ def api_summary():
         'top_artists': top_artists,
         'top_albums': top_albums,
         'recent_albums': recent_albums,
+        'mosaic_albums': mosaic_albums,
         'users': users
     })
 

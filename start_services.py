@@ -32,7 +32,9 @@ if __name__ == "__main__":
         ("Recommender Service", [python_cmd, "-m", "uvicorn", "services.recommender.main:app", "--host", "0.0.0.0", "--port", "3002"]),
         ("Pricing Service", [python_cmd, "-m", "uvicorn", "services.pricing.main:app", "--host", "0.0.0.0", "--port", "3003"]),
         ("Last.fm Service", [python_cmd, "-m", "uvicorn", "services.lastfm.main:app", "--host", "0.0.0.0", "--port", "3004"]),
+        ("Spotify Service", [python_cmd, "-m", "uvicorn", "services.spotify.main:app", "--host", "0.0.0.0", "--port", "3005"]),
         ("API Gateway", [python_cmd, "-m", "uvicorn", "gateway.main:app", "--host", "0.0.0.0", "--port", os.getenv("PORT", "5000")]),
+        ("DB Explorer", [python_cmd, "db_explorer/app.py"]),
     ]
     
     for name, cmd in services:
@@ -46,7 +48,9 @@ if __name__ == "__main__":
     print("- Recommender Service: http://localhost:3002")
     print("- Pricing Service: http://localhost:3003")
     print("- Last.fm Service: http://localhost:3004")
+    print("- Spotify Service: http://localhost:3005")
     print("- API Gateway: http://localhost:5000")
+    print("- DB Explorer: http://localhost:5001")
     print("\nPress Ctrl+C to stop all services")
     
     try:

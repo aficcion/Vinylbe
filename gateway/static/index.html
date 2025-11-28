@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vinilogy - Descubre Vinilos</title>
+    <link rel="stylesheet" href="/static/styles.css">
     <link rel="stylesheet" href="/static/artist-search.css">
     <style>
         :root {
@@ -90,6 +91,7 @@
             padding: 2rem;
         }
 
+        /* Old hero styles - replaced by mosaic
         .hero {
             text-align: center;
             padding: 6rem 2rem;
@@ -111,6 +113,7 @@
             margin-bottom: 3rem;
             line-height: 1.6;
         }
+        */
 
         .spotify-btn {
             display: inline-flex;
@@ -430,8 +433,8 @@
 
         .detail-content {
             display: grid;
-            grid-template-columns: 400px 1fr;
-            gap: 4rem;
+            grid-template-columns: 320px 1fr;
+            gap: 2rem;
             align-items: start;
         }
 
@@ -442,16 +445,20 @@
         }
 
         .detail-info-section h1 {
-            font-size: 2.5rem;
-            font-weight: 800;
-            margin-bottom: 0.75rem;
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
             line-height: 1.2;
         }
 
+        .detail-info-section {
+            max-width: 600px;
+        }
+
         .detail-info-section .detail-artist {
-            font-size: 1.5rem;
+            font-size: 1.1rem;
             color: var(--text-secondary);
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
         }
 
         .spinner-small {
@@ -466,38 +473,39 @@
 
         .price-highlight {
             background: var(--bg-secondary);
-            border: 2px solid var(--accent-color);
-            border-radius: 12px;
-            padding: 2rem;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1.25rem;
             text-align: center;
-            margin-bottom: 1.5rem;
+            margin-bottom: 1rem;
         }
 
         .price-label {
-            font-size: 0.9rem;
+            font-size: 0.8rem;
             color: var(--text-secondary);
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.35rem;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            font-weight: 500;
         }
 
         .price-value {
-            font-size: 2.5rem;
-            font-weight: 700;
+            font-size: 1.5rem;
+            font-weight: 600;
             color: var(--accent-color);
-            margin-bottom: 1.5rem;
+            margin-bottom: 1rem;
         }
 
         .btn-primary {
             display: block;
             background: var(--accent-color);
             color: white;
-            padding: 1rem 2rem;
+            padding: 0.75rem 1.5rem;
             border-radius: 8px;
             text-decoration: none;
             text-align: center;
             font-weight: 600;
-            font-size: 1.05rem;
+            font-size: 0.95rem;
             transition: all 0.2s;
         }
 
@@ -512,14 +520,14 @@
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
             color: var(--text-primary);
-            padding: 1rem 2rem;
+            padding: 0.75rem 1.5rem;
             border-radius: 8px;
             text-decoration: none;
             text-align: center;
             font-weight: 500;
-            font-size: 1.05rem;
+            font-size: 0.9rem;
             transition: all 0.2s;
-            margin-bottom: 1rem;
+            margin-bottom: 0.75rem;
         }
 
         .btn-secondary:hover {
@@ -527,63 +535,74 @@
         }
 
         .tracklist-section {
-            margin-top: 2rem;
-            padding-top: 2rem;
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
             border-top: 1px solid var(--border-color);
         }
 
         .tracklist-section h3 {
-            font-size: 1.2rem;
+            font-size: 1rem;
             font-weight: 600;
-            margin-bottom: 1rem;
+            margin-bottom: 0.75rem;
         }
 
         .tracklist {
             list-style: none;
             counter-reset: track-counter;
             padding: 0;
-            max-height: 400px;
+            max-height: 300px;
             overflow-y: auto;
         }
 
         .tracklist li {
             counter-increment: track-counter;
-            padding: 0.6rem 0;
+            padding: 0.35rem 0;
             border-bottom: 1px solid var(--border-color);
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            font-size: 0.95rem;
+            font-size: 0.85rem;
+            gap: 0.5rem;
         }
 
         .tracklist li:last-child {
             border-bottom: none;
         }
 
+        /* Title span */
+        .tracklist li>span:first-of-type {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
         .tracklist li::before {
-            content: counter(track-counter) ". ";
+            content: counter(track-counter) ".";
             font-weight: 600;
             color: var(--text-secondary);
-            margin-right: 0.75rem;
-            min-width: 2rem;
+            min-width: 1.25rem;
+            display: inline-block;
+            text-align: right;
+            flex-shrink: 0;
         }
 
         .tracklist .duration {
             color: var(--text-secondary);
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             margin-left: auto;
-            padding-left: 1rem;
             white-space: nowrap;
+            flex-shrink: 0;
+            padding-left: 0;
         }
 
         .info-message {
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
             border-radius: 8px;
-            padding: 1rem;
+            padding: 0.75rem;
             color: var(--text-secondary);
-            font-size: 0.9rem;
-            margin: 1rem 0;
+            font-size: 0.85rem;
+            margin: 0.75rem 0;
         }
 
         .info-message.warning {
@@ -599,27 +618,27 @@
         }
 
         .stores-section {
-            margin-top: 2rem;
-            padding-top: 2rem;
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
             border-top: 1px solid var(--border-color);
         }
 
         .stores-section h3 {
-            font-size: 1.2rem;
+            font-size: 1rem;
             font-weight: 600;
-            margin-bottom: 1rem;
+            margin-bottom: 0.75rem;
         }
 
         .store-link {
             display: block;
             background: var(--bg-secondary);
-            padding: 1rem 1.5rem;
+            padding: 0.75rem 1rem;
             border-radius: 8px;
             text-decoration: none;
             color: var(--text-primary);
-            margin-bottom: 0.75rem;
+            margin-bottom: 0.5rem;
             transition: all 0.2s;
-            font-size: 1rem;
+            font-size: 0.9rem;
         }
 
         .store-link:hover {
@@ -1118,23 +1137,24 @@
     </div>
 
     <div id="landing-view">
-        <div class="hero">
-            <h1>Descubre Vinilos Basados en tu Música</h1>
-            <p>Conecta tu Last.fm o busca tus artistas favoritos para encontrar recomendaciones de vinilos
-                personalizadas</p>
-            <div class="connection-buttons">
+        <div class="mosaic-container">
+            <div class="mosaic-grid" id="mosaicGrid"></div>
+            <div class="mosaic-overlay">
+                <div class="mosaic-content">
+                    <h1>Vinilogy</h1>
+                    <p>Descubre Vinilos Basados en tu Música</p>
 
-                <button class="lastfm-btn" onclick="loginLastfm()">
-                    <span style="font-size: 1.3em;">🎵</span>
-                    Conectar con Last.fm
-                </button>
+                    <div class="hero-actions"
+                        style="display: flex; gap: 1rem; justify-content: center; margin-top: 2rem; flex-wrap: wrap;">
+                        <button class="lastfm-btn" onclick="loginLastfm()">
+                            <span style="font-size: 1.3em;">🎵</span> Conectar Last.fm
+                        </button>
+                        <button class="search-artists-btn" onclick="openArtistSearch()">
+                            🔍 Buscar artistas
+                        </button>
+                    </div>
+                </div>
             </div>
-
-            <div class="options-divider">o</div>
-
-            <button class="search-artists-btn" onclick="openArtistSearch()">
-                🔍 Buscar artistas
-            </button>
         </div>
 
         <div class="loading-state" id="loading">

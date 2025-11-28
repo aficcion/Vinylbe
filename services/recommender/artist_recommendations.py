@@ -466,7 +466,7 @@ def _discogs_master_data(master_id: str, key: str, secret: str, csv_mode: bool =
 
 
 def get_artist_studio_albums(artist_name: str, discogs_key: str, discogs_secret: str,
-                              top_n: int = 3, csv_mode: bool = False) -> List[StudioAlbum]:
+                              top_n: int = 3, csv_mode: bool = False, cache_only: bool = False) -> List[StudioAlbum]:
     cached_albums = _get_cached_artist_albums(artist_name)
     if cached_albums:
         result = []
@@ -485,6 +485,11 @@ def get_artist_studio_albums(artist_name: str, discogs_key: str, discogs_secret:
             )
             result.append(album)
         return result
+    
+    # If cache_only mode and not in cache, return empty list
+    if cache_only:
+        print(f"[CACHE_ONLY] '{artist_name}' not in cache, skipping MusicBrainz/Discogs lookup")
+        return []
     
     mbid = _find_artist_mbid(artist_name)
     if not mbid:
