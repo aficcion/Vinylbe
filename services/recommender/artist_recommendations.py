@@ -55,7 +55,8 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             name TEXT NOT NULL UNIQUE,
             mbid TEXT,
             image_url TEXT,
-            last_updated TIMESTAMP
+            last_updated TIMESTAMP,
+            is_partial INTEGER DEFAULT 0
         )
         """
     )
@@ -66,16 +67,51 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             artist_id INTEGER NOT NULL,
             title TEXT NOT NULL,
             year TEXT,
+            mbid TEXT,
             discogs_master_id TEXT,
             discogs_release_id TEXT,
             rating REAL,
             votes INTEGER,
             cover_url TEXT,
             last_updated TIMESTAMP,
+            is_partial INTEGER DEFAULT 0,
             FOREIGN KEY (artist_id) REFERENCES artists(id)
         )
         """
     )
+    
+    # Migration: Add mbid column if it doesn't exist
+    try:
+        cur.execute("ALTER TABLE albums ADD COLUMN mbid TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column likely already exists
+        
+    # Migration: Add is_partial column if it doesn't exist
+    try:
+        cur.execute("ALTER TABLE albums ADD COLUMN is_partial INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # Column likely already exists
+        
+    # Migration: Add is_partial column to artists if it doesn't exist
+    try:
+        cur.execute("ALTER TABLE artists ADD COLUMN is_partial INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # Column likely already exists
+        
+    # Migration: Add spotify_id column to artists if it doesn't exist
+    try:
+        cur.execute("ALTER TABLE artists ADD COLUMN spotify_id TEXT UNIQUE")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_artists_spotify_id ON artists(spotify_id)")
+    except sqlite3.OperationalError:
+        pass  # Column likely already exists
+
+    # Migration: Add spotify_id column to albums if it doesn't exist
+    try:
+        cur.execute("ALTER TABLE albums ADD COLUMN spotify_id TEXT")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_albums_spotify_id ON albums(spotify_id)")
+    except sqlite3.OperationalError:
+        pass  # Column likely already exists
+        
     conn.commit()
 
 

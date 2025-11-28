@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from libs.shared.models import ServiceHealth
 from libs.shared.utils import log_event
+from . import db_utils
 from .scoring_engine import ScoringEngine
 from .album_aggregator import AlbumAggregator
 from .artist_recommendations import get_artist_based_recommendations, get_artist_studio_albums
@@ -494,135 +495,159 @@ async def artist_single_recommendation(request: SingleArtistRequest):
     log_event("recommender-service", "INFO", f"Generating recommendations for artist: {request.artist_name}")
     
     try:
+        # 1. Try to get from DB (Cache Only)
+        # This is FAST and checks if we already have quality data
         albums = get_artist_studio_albums(
             request.artist_name,
             discogs_key,
             discogs_secret,
             top_n=request.top_albums,
             csv_mode=request.csv_mode,
-            cache_only=request.cache_only
+            cache_only=True  # FORCE CACHE ONLY - Do not go to Discogs yet
         )
         
-        recommendations = []
-        for album in albums:
-            rec = {
-                "album_name": album.title,
-                "artist_name": album.artist_name,
-                "year": album.year,
-                "rating": album.rating,
-                "votes": album.votes,
-                "discogs_master_id": album.discogs_master_id or album.discogs_release_id,
-                "discogs_type": album.discogs_type,
-                "image_url": album.cover_image or "https://via.placeholder.com/300x300?text=No+Cover",
-                "source": "artist_based"
-            }
-            recommendations.append(rec)
-        
-        elapsed = time.time() - start_time
-        log_event("recommender-service", "INFO", 
-                 f"Generated {len(recommendations)} recommendations for {request.artist_name} in {elapsed:.2f}s")
-        return {"recommendations": recommendations, "total": len(recommendations), "artist_name": request.artist_name}
+        if albums:
+            # CACHE HIT: We have data in DB, return it
+            recommendations = []
+            for album in albums:
+                rec = {
+                    "album_name": album.title,
+                    "artist_name": album.artist_name,
+                    "year": album.year,
+                    "rating": album.rating,
+                    "votes": album.votes,
+                    "discogs_master_id": album.discogs_master_id or album.discogs_release_id,
+                    "discogs_type": album.discogs_type,
+                    "image_url": album.cover_image or "https://via.placeholder.com/300x300?text=No+Cover",
+                    "source": "artist_based"
+                }
+                recommendations.append(rec)
+            
+            elapsed = time.time() - start_time
+            log_event("recommender-service", "INFO", 
+                     f"✓ Cache HIT for {request.artist_name}: {len(recommendations)} albums in {elapsed:.2f}s")
+            return {"recommendations": recommendations, "total": len(recommendations), "artist_name": request.artist_name}
+            
+        else:
+            # CACHE MISS: Do NOT go to Discogs (too slow for interactive use)
+            # Fallback immediately to Spotify (Fast, creates partial records)
+            log_event("recommender-service", "INFO", 
+                     f"○ Cache MISS for {request.artist_name}. Falling back to Spotify for speed.")
+            
+            return await _generate_spotify_recommendations(
+                request.artist_name, 
+                request.top_albums,
+                user_id=None
+            )
+
     except Exception as e:
         log_event("recommender-service", "ERROR", f"Failed to generate recommendations for {request.artist_name}: {str(e)}")
+        # If Spotify fallback also fails, we return error
         raise HTTPException(status_code=500, detail=f"Failed to generate recommendations: {str(e)}")
 
 
-@app.post("/spotify-recommendations")
-async def spotify_recommendations(request: SingleArtistRequest):
-    """Generate recommendations using Spotify (fallback/lightweight mode)"""
+async def _generate_spotify_recommendations(artist_name: str, top_albums: int, user_id: int = None):
+    """Helper to generate recommendations using Spotify (fast fallback)"""
     import time
     import httpx
     from . import db_utils
     
     start_time = time.time()
-    artist_name = request.artist_name
-    
     log_event("recommender-service", "INFO", f"Generating Spotify recommendations for: {artist_name}")
     
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            # 1. Search artist to get ID
-            search_resp = await client.get(
-                f"{SPOTIFY_SERVICE_URL}/search/artists",
-                params={"q": artist_name, "limit": 1}
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        # 1. Search artist to get ID
+        search_resp = await client.get(
+            f"{SPOTIFY_SERVICE_URL}/search/artists",
+            params={"q": artist_name, "limit": 1}
+        )
+        search_data = search_resp.json()
+        artists = search_data.get("artists", [])
+        
+        if not artists:
+            raise HTTPException(status_code=404, detail="Artist not found on Spotify")
+        
+        artist = artists[0]
+        spotify_artist_id = artist["id"]
+        artist_name = artist["name"]  # Use canonical name
+        
+        # 2. Get top albums
+        albums_resp = await client.get(
+            f"{SPOTIFY_SERVICE_URL}/artist/{spotify_artist_id}/albums",
+            params={"limit": top_albums + 5}  # Fetch a few more to filter
+        )
+        albums_data = albums_resp.json()
+        spotify_albums = albums_data.get("albums", [])
+        
+        recommendations = []
+        
+        # 3. Process albums (check cache or create partial)
+        for album in spotify_albums[:top_albums]:
+            # Check cache
+            cached = db_utils.get_cached_album(
+                artist_name, 
+                album["name"], 
+                spotify_id=album["id"]
             )
-            search_data = search_resp.json()
-            artists = search_data.get("artists", [])
             
-            if not artists:
-                raise HTTPException(status_code=404, detail="Artist not found on Spotify")
-            
-            artist = artists[0]
-            spotify_artist_id = artist["id"]
-            artist_name = artist["name"]  # Use canonical name
-            
-            # 2. Get top albums
-            albums_resp = await client.get(
-                f"{SPOTIFY_SERVICE_URL}/artist/{spotify_artist_id}/albums",
-                params={"limit": request.top_albums + 5}  # Fetch a few more to filter
-            )
-            albums_data = albums_resp.json()
-            spotify_albums = albums_data.get("albums", [])
-            
-            recommendations = []
-            
-            # 3. Process albums (check cache or create partial)
-            for album in spotify_albums[:request.top_albums]:
-                # Check cache
-                cached = db_utils.get_cached_album(
-                    artist_name, 
-                    album["name"], 
-                    spotify_id=album["id"]
+            if cached:
+                # Use cached data (might be full or partial)
+                rec = {
+                    "album_name": cached["title"],
+                    "artist_name": cached["artist_name"],
+                    "year": cached.get("year"),
+                    "rating": cached.get("rating"),
+                    "votes": cached.get("votes"),
+                    "discogs_master_id": cached.get("discogs_master_id"),
+                    "image_url": cached.get("cover_url"),
+                    "spotify_id": cached.get("spotify_id"),
+                    "is_partial": cached.get("is_partial", 0),
+                    "source": "spotify"
+                }
+            else:
+                # Create partial entry
+                db_utils.create_basic_album_entry(
+                    artist_name,
+                    album["name"],
+                    cover_url=album["image_url"],
+                    spotify_id=album["id"],
+                    artist_spotify_id=spotify_artist_id
                 )
                 
-                if cached:
-                    # Use cached data (might be full or partial)
-                    rec = {
-                        "album_name": cached["title"],
-                        "artist_name": cached["artist_name"],
-                        "year": cached.get("year"),
-                        "rating": cached.get("rating"),
-                        "votes": cached.get("votes"),
-                        "discogs_master_id": cached.get("discogs_master_id"),
-                        "image_url": cached.get("cover_url"),
-                        "spotify_id": cached.get("spotify_id"),
-                        "is_partial": cached.get("is_partial", 0),
-                        "source": "spotify"
-                    }
-                else:
-                    # Create partial entry
-                    db_utils.create_basic_album_entry(
-                        artist_name,
-                        album["name"],
-                        cover_url=album["image_url"],
-                        spotify_id=album["id"],
-                        artist_spotify_id=spotify_artist_id
-                    )
-                    
-                    rec = {
-                        "album_name": album["name"],
-                        "artist_name": artist_name,
-                        "year": album.get("release_date")[:4] if album.get("release_date") else None,
-                        "rating": None,
-                        "votes": None,
-                        "image_url": album["image_url"],
-                        "spotify_id": album["id"],
-                        "is_partial": 1,
-                        "source": "spotify"
-                    }
-                
-                recommendations.append(rec)
+                rec = {
+                    "album_name": album["name"],
+                    "artist_name": artist_name,
+                    "year": album.get("release_date")[:4] if album.get("release_date") else None,
+                    "rating": None,
+                    "votes": None,
+                    "image_url": album["image_url"],
+                    "spotify_id": album["id"],
+                    "is_partial": 1,
+                    "source": "spotify"
+                }
             
-            elapsed = time.time() - start_time
-            log_event("recommender-service", "INFO", 
-                     f"Generated {len(recommendations)} Spotify recommendations for {artist_name} in {elapsed:.2f}s")
-            
-            return {
-                "recommendations": recommendations, 
-                "total": len(recommendations), 
-                "artist_name": artist_name
-            }
-            
+            recommendations.append(rec)
+        
+        elapsed = time.time() - start_time
+        log_event("recommender-service", "INFO", 
+                 f"Generated {len(recommendations)} Spotify recommendations for {artist_name} in {elapsed:.2f}s")
+        
+        return {
+            "recommendations": recommendations, 
+            "total": len(recommendations), 
+            "artist_name": artist_name
+        }
+
+
+@app.post("/spotify-recommendations")
+async def spotify_recommendations(request: SingleArtistRequest):
+    """Generate recommendations using Spotify (fast fallback)"""
+    try:
+        return await _generate_spotify_recommendations(
+            request.artist_name, 
+            request.top_albums, 
+            user_id=None
+        )
     except Exception as e:
         log_event("recommender-service", "ERROR", f"Spotify recommendations failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate recommendations: {str(e)}")

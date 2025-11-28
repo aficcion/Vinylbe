@@ -688,22 +688,30 @@ async def enrich_album_with_discogs(album: dict, idx: int, total: int, semaphore
 
 
 @app.get("/api/spotify/search/artists")
-async def search_spotify_artists(q: str):
-    if not http_client:
-        raise HTTPException(status_code=500, detail="HTTP client not initialized")
-    
-    if len(q) < 2:
-        raise HTTPException(status_code=400, detail="Query must be at least 2 characters")
-    
+async def search_spotify_artists(q: str, limit: int = 10):
+    """Search artists using Spotify Service"""
     try:
-        log_event("gateway", "INFO", f"Searching Spotify artists: {q}")
-        resp = await http_client.get(f"{SPOTIFY_SERVICE_URL}/search/artists", params={"q": q, "limit": 10})
-        data = resp.json()
-        log_event("gateway", "INFO", f"Found {data.get('total', 0)} artists on Spotify")
-        return data
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{SPOTIFY_SERVICE_URL}/search/artists", 
+                params={"q": q, "limit": limit},
+                timeout=10.0
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.ConnectError:
+        log_event("gateway", "ERROR", f"Could not connect to Spotify Service at {SPOTIFY_SERVICE_URL}")
+        raise HTTPException(status_code=503, detail="Spotify Service unavailable (Connection Refused)")
     except Exception as e:
-        log_event("gateway", "ERROR", f"Spotify artist search failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+        log_event("gateway", "ERROR", f"Spotify search failed: {str(e)}")
+        # Return the actual error from the service if possible
+        detail = str(e)
+        if isinstance(e, httpx.HTTPStatusError):
+            try:
+                detail = e.response.json().get("detail", str(e))
+            except:
+                pass
+        raise HTTPException(status_code=500, detail=f"Search failed: {detail}")
 
 
 @app.post("/api/recommendations/artist-single")
