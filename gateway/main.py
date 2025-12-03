@@ -161,7 +161,7 @@ class LinkLastFmRequest(BaseModel):
     lastfm_username: str = Field(..., description="Last.fm username to link")
 
 @app.post("/auth/google")
-async def google_login(request: GoogleLoginRequest):
+async def auth_google(request: GoogleLoginRequest):
     """Create or retrieve a user via Google OAuth credentials."""
     try:
         user_id = db.get_or_create_user_via_google(
@@ -169,10 +169,35 @@ async def google_login(request: GoogleLoginRequest):
             display_name=request.display_name,
             google_sub=request.google_sub,
         )
-        return {"user_id": user_id}
+        return {"user_id": user_id, "display_name": request.display_name}
     except Exception as e:
         log_event("gateway", "ERROR", f"Google login failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Google login error: {str(e)}")
+
+@app.post("/auth/guest")
+async def create_guest_user():
+    """Create a guest user for anonymous usage."""
+    try:
+        # Create a guest user with a unique display name
+        import uuid
+        guest_name = f"Guest_{uuid.uuid4().hex[:8]}"
+        
+        conn = db.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO user (display_name) VALUES (?)",
+                (guest_name,)
+            )
+            conn.commit()
+            user_id = cur.lastrowid
+            log_event("gateway", "INFO", f"Created guest user: {user_id}")
+            return {"user_id": user_id, "display_name": guest_name}
+        finally:
+            conn.close()
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Failed to create guest user: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create guest user: {str(e)}")
 
 @app.post("/auth/lastfm")
 async def lastfm_login_endpoint(request: LastFmLoginRequest):
@@ -459,6 +484,83 @@ async def api_get_selected_artists(user_id: int):
 async def api_add_selected_artist(user_id: int, artist: SelectedArtistCreate):
     """Alias for adding selected artist under /api prefix."""
     return await add_selected_artist(user_id, artist)
+
+@app.post("/api/users/{user_id}/albums")
+async def add_album_to_user(user_id: int, album_data: dict):
+    """Add an album to the user's collection, creating partial artist if needed."""
+    try:
+        album_title = album_data.get("title")
+        artist_name = album_data.get("artist_name")
+        cover_url = album_data.get("cover_url")
+        discogs_id = album_data.get("discogs_id")
+        
+        if not album_title or not artist_name:
+            raise HTTPException(status_code=400, detail="title and artist_name are required")
+        
+        conn = db.get_connection()
+        try:
+            cur = conn.cursor()
+            
+            # Check if artist exists
+            cur.execute("SELECT id FROM artists WHERE name = ? COLLATE NOCASE", (artist_name,))
+            artist_row = cur.fetchone()
+            
+            if not artist_row:
+                # Create partial artist
+                cur.execute(
+                    "INSERT INTO artists (name, is_partial) VALUES (?, 1)",
+                    (artist_name,)
+                )
+                artist_id = cur.lastrowid
+                log_event("gateway", "INFO", f"Created partial artist: {artist_name}")
+            else:
+                artist_id = artist_row["id"]
+            
+            # Check if album exists
+            cur.execute(
+                "SELECT id FROM albums WHERE artist_id = ? AND title = ? COLLATE NOCASE",
+                (artist_id, album_title)
+            )
+            album_row = cur.fetchone()
+            
+            if not album_row:
+                # Create album
+                cur.execute(
+                    "INSERT INTO albums (artist_id, title, cover_url, is_partial) VALUES (?, ?, ?, 1)",
+                    (artist_id, album_title, cover_url)
+                )
+                album_id = cur.lastrowid
+                log_event("gateway", "INFO", f"Created album: {album_title} by {artist_name}")
+            else:
+                album_id = album_row["id"]
+                log_event("gateway", "INFO", f"Album already exists: {album_title} by {artist_name}")
+            
+            # Add to user's recommendations as neutral
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO recommendation (user_id, artist_name, album_title, source, status)
+                VALUES (?, ?, ?, 'manual', 'neutral')
+                """,
+                (user_id, artist_name, album_title)
+            )
+            
+            conn.commit()
+            
+            return {
+                "status": "added",
+                "artist_id": artist_id,
+                "album_id": album_id,
+                "artist_name": artist_name,
+                "album_title": album_title
+            }
+        finally:
+            conn.close()
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Add album failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Add album failed: {str(e)}")
 
 @app.delete("/api/users/{user_id}/selected-artists/{selection_id}")
 async def api_remove_selected_artist(user_id: int, selection_id: int):
@@ -812,6 +914,127 @@ async def search_spotify_artists(q: str, limit: int = 10):
             except:
                 pass
         raise HTTPException(status_code=500, detail=f"Search failed: {detail}")
+
+
+@app.get("/api/search")
+async def unified_search(q: str, limit: int = 20):
+    """
+    Unified search endpoint for both artists and albums.
+    Searches Spotify for artists and database+Discogs for albums, then deduplicates results.
+    """
+    if not http_client:
+        raise HTTPException(status_code=500, detail="HTTP client not initialized")
+    
+    if len(q) < 3:
+        return {"artists": [], "albums": []}
+    
+    try:
+        # Search Spotify for artists (not database)
+        spotify_artists = []
+        try:
+            resp = await http_client.get(
+                f"{SPOTIFY_SERVICE_URL}/search/artists",
+                params={"q": q, "limit": 10},
+                timeout=5.0
+            )
+            if resp.status_code == 200:
+                spotify_data = resp.json()
+                spotify_artists = spotify_data.get("artists", [])
+        except Exception as e:
+            log_event("gateway", "WARNING", f"Spotify search failed: {str(e)}")
+        
+        # Search database for albums
+        db_albums = db.search_albums(q, limit=20)
+        
+        # Search Discogs for albums
+        discogs_albums = []
+        try:
+            resp = await http_client.get(
+                f"{DISCOGS_SERVICE_URL}/search_album_only",
+                params={"q": q},
+                timeout=5.0
+            )
+            if resp.status_code == 200:
+                discogs_data = resp.json()
+                discogs_albums = discogs_data.get("releases", [])
+            elif resp.status_code == 429:
+                # Rate limit hit, just use DB results
+                log_event("gateway", "WARNING", "Discogs rate limit hit, using DB results only")
+        except Exception as e:
+            log_event("gateway", "WARNING", f"Discogs search failed: {str(e)}")
+        
+        # Helper function to normalize artist names (remove numbers in parentheses)
+        def normalize_artist_name(name: str) -> str:
+            import re
+            # Remove patterns like " (11)" or " (2)" at the end
+            return re.sub(r'\s*\(\d+\)$', '', name).strip()
+        
+        # Helper function to create deduplication key
+        def create_album_key(artist: str, title: str) -> str:
+            # Normalize both artist and title for better matching
+            artist_norm = normalize_artist_name(artist).lower().strip()
+            title_norm = title.lower().strip()
+            return f"{artist_norm}|{title_norm}"
+        
+        # Format and deduplicate albums
+        albums_map = {}
+        
+        # Add DB albums first (they have priority)
+        for album in db_albums:
+            artist_name = album.get('artist_name', '')
+            title = album.get('title', '')
+            key = create_album_key(artist_name, title)
+            albums_map[key] = {
+                "title": title,
+                "artist_name": artist_name,
+                "cover_url": album.get("cover_url"),
+                "source": "database",
+                "is_partial": album.get("is_partial", 0)
+            }
+        
+        # Add Discogs albums (if not already in DB)
+        for album in discogs_albums:
+            title = album.get("title", "")
+            # Extract artist from title (Discogs format: "Artist - Album")
+            if " - " in title:
+                artist_name, album_title = title.split(" - ", 1)
+                # Normalize artist name (remove numbers in parentheses)
+                artist_name = normalize_artist_name(artist_name)
+            else:
+                artist_name = ""
+                album_title = title
+            
+            key = create_album_key(artist_name, album_title)
+            if key not in albums_map:
+                albums_map[key] = {
+                    "title": album_title,
+                    "artist_name": artist_name,
+                    "cover_url": album.get("cover_image") or album.get("thumb"),
+                    "source": "discogs",
+                    "discogs_id": album.get("id"),
+                    "is_partial": 1  # Discogs results are partial until added
+                }
+        
+        # Format artists from Spotify
+        artists = [
+            {
+                "name": artist.get("name"),
+                "image_url": artist.get("image_url"),
+                "genres": artist.get("genres", []),
+                "source": "spotify"
+            }
+            for artist in spotify_artists
+        ]
+        
+        return {
+            "artists": artists,
+            "albums": list(albums_map.values())[:limit]
+        }
+        
+    except Exception as e:
+        log_event("gateway", "ERROR", f"Unified search failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
 
 
 @app.post("/api/recommendations/artist-single")

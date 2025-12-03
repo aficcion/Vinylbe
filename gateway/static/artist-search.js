@@ -2,7 +2,7 @@ class ArtistSearch {
     constructor(containerId, options = {}) {
         this.container = document.getElementById(containerId);
         this.options = {
-            minArtists: options.minArtists || 3,
+            minArtists: options.minArtists || 0,
             maxArtists: options.maxArtists || 10,
             onSelectionChange: options.onSelectionChange || (() => { }),
             onContinue: options.onContinue || null,
@@ -10,7 +10,9 @@ class ArtistSearch {
         };
 
         this.selectedArtists = [];
+        this.selectedAlbums = [];
         this.searchResults = [];
+        this.albumResults = [];
         this.searchTimeout = null;
         this.recommendationsCache = {};
         this.loadingArtists = new Set();
@@ -20,18 +22,67 @@ class ArtistSearch {
         this.attachEventListeners();
     }
 
+    renderSelectedAlbums() {
+        const pillsContainer = document.getElementById('selected-albums-pills');
+        const counter = document.getElementById('album-counter');
+
+        if (!pillsContainer || !counter) return;
+
+        counter.textContent = `${this.selectedAlbums.length} añadidos`;
+
+        if (this.selectedAlbums.length === 0) {
+            pillsContainer.innerHTML = '<div class="no-selection">Aún no has añadido álbumes</div>';
+            return;
+        }
+
+        pillsContainer.innerHTML = this.selectedAlbums.map((album, index) => {
+            return `
+                <div class="album-pill">
+                    ${album.cover_url
+                    ? `<img src="${album.cover_url}" alt="${album.title}" class="pill-image" />`
+                    : '<div class="pill-placeholder">💿</div>'
+                }
+                    <div class="pill-album-info">
+                        <span class="pill-album-title">${album.title}</span>
+                        <span class="pill-album-artist">${album.artist_name}</span>
+                    </div>
+                    <button class="pill-remove-btn" data-album-index="${index}">✕</button>
+                </div>
+            `;
+        }).join('');
+
+        this.attachAlbumPillRemoveListeners();
+    }
+
+    attachAlbumPillRemoveListeners() {
+        const removeButtons = document.querySelectorAll('.album-pill .pill-remove-btn');
+        removeButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const index = parseInt(btn.dataset.albumIndex);
+                this.removeAlbum(index);
+            });
+        });
+    }
+
+    removeAlbum(index) {
+        this.selectedAlbums.splice(index, 1);
+        this.renderSelectedAlbums();
+        // Re-render search results to update button states
+        this.renderSearchResults();
+    }
+
     render() {
         this.container.innerHTML = `
             <div class="artist-search-modal">
                 <div class="artist-search-header">
-                    <h2>Selecciona entre ${this.options.minArtists} y ${this.options.maxArtists} artistas. Puedes buscar o elegir de los sugeridos.</h2>
+                    <h2>Selecciona hasta ${this.options.maxArtists} artistas o añade álbumes directamente.</h2>
                 </div>
                 
                 <div class="artist-search-input-wrapper">
                     <input 
                         type="text" 
                         id="artist-search-input" 
-                        placeholder="Escribe al menos 4 caracteres..." 
+                        placeholder="Busca música o busca vinilos..." 
                         class="artist-search-input"
                         autocomplete="off"
                     />
@@ -45,10 +96,18 @@ class ArtistSearch {
                 
                 <div class="selected-artists-section">
                     <div class="selected-artists-header">
-                        <span>Artistas seleccionados (mín. ${this.options.minArtists}, máx. ${this.options.maxArtists})</span>
+                        <span>Artistas seleccionados (opcional, máx. ${this.options.maxArtists})</span>
                         <span id="artist-counter" class="artist-counter">0/${this.options.maxArtists} seleccionados</span>
                     </div>
                     <div id="selected-artists-pills" class="selected-artists-pills"></div>
+                </div>
+
+                <div class="selected-albums-section">
+                    <div class="selected-albums-header">
+                        <span>Álbumes añadidos</span>
+                        <span id="album-counter" class="album-counter">0 añadidos</span>
+                    </div>
+                    <div id="selected-albums-pills" class="selected-albums-pills"></div>
                 </div>
                 
                 ${this.options.onContinue ? `
@@ -109,57 +168,104 @@ class ArtistSearch {
         resultsGrid.innerHTML = '<div class="loading">Buscando...</div>';
 
         try {
-            const response = await fetch(`/api/spotify/search/artists?q=${encodeURIComponent(query)}`);
+            const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
             const data = await response.json();
 
             this.searchResults = data.artists || [];
+            this.albumResults = data.albums || [];
             this.renderSearchResults();
         } catch (error) {
             console.error('Search failed:', error);
-            resultsGrid.innerHTML = '<div class="error">Error al buscar artistas</div>';
+            resultsGrid.innerHTML = '<div class="error">Error al buscar</div>';
         }
     }
 
     renderSearchResults() {
         const resultsGrid = document.getElementById('search-results-grid');
 
-        if (this.searchResults.length === 0) {
-            resultsGrid.innerHTML = '<div class="no-results">No se encontraron artistas</div>';
+        if (this.searchResults.length === 0 && (!this.albumResults || this.albumResults.length === 0)) {
+            resultsGrid.innerHTML = '<div class="no-results">No se encontraron resultados</div>';
             return;
         }
 
-        resultsGrid.innerHTML = this.searchResults.map(artist => {
-            const isSelected = this.selectedArtists.some(a => a.name === artist.name);
-            const isDisabled = !isSelected && this.selectedArtists.length >= this.options.maxArtists;
+        let html = '';
 
-            return `
-                <div class="artist-card ${isSelected ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}" 
-                     data-artist-name="${artist.name}">
-                    <div class="artist-card-content">
-                        <div class="artist-image-wrapper">
-                            ${artist.image_url
-                    ? `<img src="${artist.image_url}" alt="${artist.name}" class="artist-image" />`
-                    : `<div class="artist-image-placeholder">🎵</div>`
-                }
+        // Render Artists Section
+        if (this.searchResults.length > 0) {
+            html += '<div class="search-section-header">Artistas</div>';
+            html += '<div class="artist-grid">';
+            html += this.searchResults.map(artist => {
+                const isSelected = this.selectedArtists.some(a => a.name === artist.name);
+                const isDisabled = !isSelected && this.selectedArtists.length >= this.options.maxArtists;
+
+                return `
+                    <div class="artist-card ${isSelected ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}" 
+                         data-artist-name="${artist.name}">
+                        <div class="artist-card-content">
+                            <div class="artist-image-wrapper">
+                                ${artist.image_url
+                        ? `<img src="${artist.image_url}" alt="${artist.name}" class="artist-image" />`
+                        : `<div class="artist-image-placeholder">🎵</div>`
+                    }
+                            </div>
+                            <div class="artist-info">
+                                <div class="artist-name">${artist.name}</div>
+                                ${artist.genres && artist.genres.length > 0
+                        ? `<div class="artist-genres">${artist.genres.join(', ')}</div>`
+                        : ''
+                    }
+                            </div>
                         </div>
-                        <div class="artist-info">
-                            <div class="artist-name">${artist.name}</div>
-                            ${artist.genres && artist.genres.length > 0
-                    ? `<div class="artist-genres">${artist.genres.join(', ')}</div>`
-                    : ''
-                }
-                        </div>
+                        <button class="add-artist-btn ${isSelected ? 'added' : ''}" 
+                                ${isDisabled ? 'disabled' : ''}
+                                data-artist='${JSON.stringify(artist)}'>
+                            ${isSelected ? '✓' : '+'}
+                        </button>
                     </div>
-                    <button class="add-artist-btn ${isSelected ? 'added' : ''}" 
-                            ${isDisabled ? 'disabled' : ''}
-                            data-artist='${JSON.stringify(artist)}'>
-                        ${isSelected ? '✓' : '+'}
-                    </button>
-                </div>
-            `;
-        }).join('');
+                `;
+            }).join('');
+            html += '</div>'; // Close artist-grid
+        }
 
+        // Render Albums Section
+        if (this.albumResults && this.albumResults.length > 0) {
+            html += '<div class="search-section-header">Álbumes</div>';
+            html += '<div class="album-grid">';
+            html += this.albumResults.map(album => {
+                // HTML-escape the JSON to prevent attribute breaking
+                const albumDataEscaped = JSON.stringify(album)
+                    .replace(/&/g, '&amp;')
+                    .replace(/'/g, '&apos;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+
+                return `
+                    <div class="album-card" data-album-title="${album.title}">
+                        <div class="album-card-content">
+                            <div class="album-image-wrapper">
+                                ${album.cover_url
+                        ? `<img src="${album.cover_url}" alt="${album.title}" class="album-image" />`
+                        : `<div class="album-image-placeholder">💿</div>`
+                    }
+                            </div>
+                            <div class="album-info">
+                                <div class="album-title">${album.title}</div>
+                                <div class="album-artist">${album.artist_name || 'Unknown Artist'}</div>
+                            </div>
+                        </div>
+                        <button class="add-album-btn" data-album="${albumDataEscaped}">
+                            +
+                        </button>
+                    </div>
+                `;
+            }).join('');
+            html += '</div>'; // Close album-grid
+        }
+
+        resultsGrid.innerHTML = html;
         this.attachArtistCardListeners();
+        this.attachAlbumCardListeners();
     }
 
     attachArtistCardListeners() {
@@ -178,6 +284,115 @@ class ArtistSearch {
                 }
             });
         });
+    }
+
+    attachAlbumCardListeners() {
+        const addButtons = document.querySelectorAll('.add-album-btn');
+
+        addButtons.forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                // Decode HTML entities before parsing JSON
+                const albumDataEscaped = btn.dataset.album;
+                const albumDataJson = albumDataEscaped
+                    .replace(/&quot;/g, '"')
+                    .replace(/&apos;/g, "'")
+                    .replace(/&lt;/g, '<')
+                    .replace(/&gt;/g, '>')
+                    .replace(/&amp;/g, '&');
+                const album = JSON.parse(albumDataJson);
+                await this.addAlbum(album, btn);
+            });
+        });
+    }
+
+    async addAlbum(album, button) {
+        // Get or create user ID
+        let userId = localStorage.getItem('userId');
+
+        // If no userId, this is a guest - we need to create a user first
+        if (!userId || userId === 'null' || userId === 'undefined') {
+            try {
+                // Create a guest user
+                const createUserResp = await fetch('/auth/guest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (createUserResp.ok) {
+                    const userData = await createUserResp.json();
+                    userId = userData.user_id;
+                    localStorage.setItem('userId', userId);
+                    console.log('Created guest user:', userId);
+                } else {
+                    alert('Error al crear usuario. Por favor, recarga la página.');
+                    return;
+                }
+            } catch (error) {
+                console.error('Error creating guest user:', error);
+                alert('Error al crear usuario. Por favor, recarga la página.');
+                return;
+            }
+        }
+
+        // Disable button and show loading state
+        button.disabled = true;
+        button.textContent = '⏳';
+
+        try {
+            const response = await fetch(`/api/users/${userId}/albums`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    title: album.title,
+                    artist_name: album.artist_name,
+                    cover_url: album.cover_url,
+                    discogs_id: album.discogs_id
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log('Album added:', data);
+
+                // Add to selected albums list
+                this.selectedAlbums.push({
+                    title: album.title,
+                    artist_name: album.artist_name,
+                    cover_url: album.cover_url
+                });
+
+                // Update button to show success permanently
+                button.textContent = '✓';
+                button.classList.add('album-added');
+                button.disabled = true;
+                button.style.background = 'var(--primary)';
+                button.style.color = 'white';
+                button.style.cursor = 'not-allowed';
+
+                // Also mark the card as added
+                const albumCard = button.closest('.album-card');
+                if (albumCard) {
+                    albumCard.classList.add('album-added');
+                }
+
+                // Render the selected albums pills
+                this.renderSelectedAlbums();
+            } else {
+                const error = await response.json();
+                console.error('Failed to add album:', error);
+                alert(`Error al añadir álbum: ${error.detail || 'Error desconocido'}`);
+                button.disabled = false;
+                button.textContent = '+';
+            }
+        } catch (error) {
+            console.error('Error adding album:', error);
+            alert('Error al añadir álbum. Por favor, intenta de nuevo.');
+            button.disabled = false;
+            button.textContent = '+';
+        }
     }
 
     async addArtist(artist) {

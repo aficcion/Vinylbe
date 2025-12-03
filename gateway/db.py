@@ -586,3 +586,49 @@ def get_random_albums_with_covers(limit: int = 50) -> List[Dict[str, Any]]:
         return []
     finally:
         conn.close()
+
+
+def search_artists(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """Search for artists by name in the database."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, name, image_url, is_partial
+            FROM artists
+            WHERE name LIKE ? COLLATE NOCASE
+            ORDER BY name
+            LIMIT ?
+            """,
+            (f"%{query}%", limit),
+        )
+        return cur.fetchall()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        conn.close()
+
+
+def search_albums(query: str, limit: int = 20) -> List[Dict[str, Any]]:
+    """Search for albums by title in the database."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT a.id, a.title, a.cover_url, a.artist_id, a.is_partial,
+                   ar.name as artist_name, ar.image_url as artist_image_url
+            FROM albums a
+            LEFT JOIN artists ar ON a.artist_id = ar.id
+            WHERE a.title LIKE ? COLLATE NOCASE
+            ORDER BY a.title
+            LIMIT ?
+            """,
+            (f"%{query}%", limit),
+        )
+        return cur.fetchall()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        conn.close()

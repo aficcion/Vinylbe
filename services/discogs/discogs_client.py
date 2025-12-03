@@ -131,6 +131,45 @@ class DiscogsClient:
                     "error": str(e)
                 }
             }
+
+    async def search_album(self, album_title: str) -> List[dict]:
+        """Search for albums by title only"""
+        if not self.client:
+            raise ValueError("Client not started")
+        
+        await self._rate_limit()
+        
+        params = self._get_auth_params(
+            release_title=album_title,
+            format="Vinyl,LP,Album",
+            per_page=20
+        )
+        
+        url = f"{self.api_base}/database/search"
+        debug_url = self._build_debug_url(url, params)
+        
+        try:
+            resp = await self.client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            results = data.get("results", [])
+            
+            return {
+                "results": results,
+                "debug_info": {
+                    "request_url": debug_url,
+                    "params_sent": {k: v for k, v in params.items() if k not in ["key", "secret"]}
+                }
+            }
+        except Exception as e:
+            log_event("discogs-client", "ERROR", f"Album search failed: {str(e)}")
+            return {
+                "results": [],
+                "debug_info": {
+                    "request_url": debug_url,
+                    "error": str(e)
+                }
+            }
     
     async def get_marketplace_stats(self, release_id: int, currency: str = "EUR") -> dict:
         if not self.client:

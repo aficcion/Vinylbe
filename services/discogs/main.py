@@ -61,6 +61,21 @@ async def search_release(artist: str = Query(...), title: str = Query(...)):
     return {"releases": results, "total": len(results), "debug_info": debug_info}
 
 
+@app.get("/search_album_only")
+async def search_album_only(q: str = Query(...)):
+    if not discogs_client:
+        raise HTTPException(status_code=500, detail="Discogs client not initialized")
+    
+    log_event("discogs-service", "INFO", f"Searching for album: {q}")
+    
+    response = await discogs_client.search_album(q)
+    results = response.get("results", [])
+    debug_info = response.get("debug_info", {})
+    
+    log_event("discogs-service", "INFO", f"Found {len(results)} album results for {q}")
+    return {"releases": results, "total": len(results), "debug_info": debug_info}
+
+
 @app.get("/stats/{release_id}")
 async def get_marketplace_stats(release_id: int, currency: str = "EUR"):
     if not discogs_client:

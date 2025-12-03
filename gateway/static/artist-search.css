@@ -81,19 +81,31 @@
     margin-bottom: 15px;
 }
 
-.artist-grid {
+.artist-search-modal .artist-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 12px;
 }
 
 @media (max-width: 600px) {
-    .artist-grid {
+    .artist-search-modal .artist-grid {
         grid-template-columns: 1fr;
     }
 }
 
-.artist-card {
+.artist-search-modal .album-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+@media (max-width: 600px) {
+    .artist-search-modal .album-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.artist-search-modal .artist-card {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -105,23 +117,23 @@
     cursor: pointer;
 }
 
-.artist-card:hover:not(.disabled) {
+.artist-search-modal .artist-card:hover:not(.disabled) {
     border-color: var(--primary);
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-.artist-card.selected {
+.artist-search-modal .artist-card.selected {
     border-color: var(--primary);
     background: var(--primary-fade);
 }
 
-.artist-card.disabled {
+.artist-search-modal .artist-card.disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }
 
-.artist-card-content {
+.artist-search-modal .artist-card-content {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -129,18 +141,18 @@
     min-width: 0;
 }
 
-.artist-image-wrapper {
+.artist-search-modal .artist-image-wrapper {
     flex-shrink: 0;
 }
 
-.artist-image {
+.artist-search-modal .artist-image {
     width: 50px;
     height: 50px;
     border-radius: 50%;
     object-fit: cover;
 }
 
-.artist-image-placeholder {
+.artist-search-modal .artist-image-placeholder {
     width: 50px;
     height: 50px;
     border-radius: 50%;
@@ -151,12 +163,12 @@
     font-size: 24px;
 }
 
-.artist-info {
+.artist-search-modal .artist-info {
     flex: 1;
     min-width: 0;
 }
 
-.artist-name {
+.artist-search-modal .artist-name {
     font-size: 15px;
     font-weight: 500;
     color: var(--text);
@@ -166,7 +178,7 @@
     text-overflow: ellipsis;
 }
 
-.artist-genres {
+.artist-search-modal .artist-genres {
     font-size: 12px;
     color: var(--text-secondary);
     white-space: nowrap;
@@ -174,7 +186,7 @@
     text-overflow: ellipsis;
 }
 
-.add-artist-btn {
+.artist-search-modal .add-artist-btn {
     flex-shrink: 0;
     width: 32px;
     height: 32px;
@@ -191,18 +203,18 @@
     transition: all 0.2s;
 }
 
-.add-artist-btn:hover:not(:disabled) {
+.artist-search-modal .add-artist-btn:hover:not(:disabled) {
     background: var(--primary);
     color: white;
     transform: scale(1.1);
 }
 
-.add-artist-btn.added {
+.artist-search-modal .add-artist-btn.added {
     background: var(--primary);
     color: white;
 }
 
-.add-artist-btn:disabled {
+.artist-search-modal .add-artist-btn:disabled {
     opacity: 0.3;
     cursor: not-allowed;
 }
@@ -353,4 +365,210 @@
 
 .artist-pill.error {
     background: linear-gradient(135deg, #f56565 0%, #c53030 100%);
+}
+
+/* Search Section Headers */
+.search-section-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 20px 0 12px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--border-color);
+    grid-column: 1 / -1;
+}
+
+.search-section-header:first-child {
+    margin-top: 0;
+}
+
+/* Album Cards */
+.artist-search-modal .album-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--card-background);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.artist-search-modal .album-card:hover {
+    border-color: var(--primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.artist-search-modal .album-card-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.artist-search-modal .album-image-wrapper {
+    flex-shrink: 0;
+}
+
+.artist-search-modal .album-image {
+    width: 50px;
+    height: 50px;
+    border-radius: 8px;
+    object-fit: cover;
+}
+
+.artist-search-modal .album-image-placeholder {
+    width: 50px;
+    height: 50px;
+    border-radius: 8px;
+    background: var(--background);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+}
+
+.artist-search-modal .album-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.artist-search-modal .album-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.artist-search-modal .album-artist {
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.artist-search-modal .add-album-btn {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid var(--primary);
+    background: var(--background);
+    color: var(--primary);
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.artist-search-modal .add-album-btn:hover {
+    background: var(--primary);
+    color: white;
+    transform: scale(1.1);
+}
+
+/* Added album state */
+.artist-search-modal .add-album-btn.album-added {
+    background: var(--primary);
+    color: white;
+    opacity: 0.7;
+}
+
+.artist-search-modal .album-card.album-added {
+    opacity: 0.7;
+    border-color: var(--primary);
+    background: var(--primary-fade);
+}
+
+/* Selected Albums Section */
+.selected-albums-section {
+    margin-bottom: 20px;
+}
+
+.selected-albums-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+}
+
+.album-counter {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.selected-albums-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 40px;
+}
+
+.album-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--card-background);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    font-size: 13px;
+    transition: all 0.2s;
+}
+
+.album-pill:hover {
+    border-color: var(--primary);
+    transform: translateY(-1px);
+}
+
+.album-pill .pill-image {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    object-fit: cover;
+}
+
+.album-pill .pill-placeholder {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+}
+
+.pill-album-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-width: 200px;
+}
+
+.pill-album-title {
+    font-weight: 500;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pill-album-artist {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
