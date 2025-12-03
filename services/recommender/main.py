@@ -14,7 +14,7 @@ from libs.shared.utils import log_event
 from . import db_utils
 from .scoring_engine import ScoringEngine
 from .album_aggregator import AlbumAggregator
-from .artist_recommendations import get_artist_based_recommendations, get_artist_studio_albums
+from .artist_recommendations import get_artist_based_recommendations, get_artist_studio_albums, get_top_albums_from_discogs_search
 
 SPOTIFY_SERVICE_URL = os.getenv("SPOTIFY_SERVICE_URL", "http://127.0.0.1:3005")
 
@@ -137,52 +137,48 @@ async def lastfm_albums_recommendations(albums: List[dict]):
                     else:
                         cache_misses += 1
                         
-                        cover_url = None
-                        spotify_album_id = None
-                        spotify_artist_id = None
-                        
+                        # Validate with Discogs instead of Spotify
                         try:
-                            # Use Spotify for cover and IDs
-                            resp = await client.get(
-                                f"{SPOTIFY_SERVICE_URL}/search/album",
-                                params={"artist": artist_name, "album": album_name}
-                            )
-                            if resp.status_code == 200:
-                                data = resp.json()
-                                cover_url = data.get("image_url")
-                                spotify_album_id = data.get("id")
-                                spotify_artist_id = data.get("artist_id")
-                                
-                                if cover_url:
-                                    covers_fetched += 1
-                                    log_event("recommender-service", "DEBUG", 
-                                             f"✓ Spotify data fetched: {artist_name} - {album_name}")
-                        except Exception as e:
-                            log_event("recommender-service", "WARNING", 
-                                     f"Spotify fetch failed: {artist_name} - {album_name}: {str(e)}")
-                        
-                        if cover_url:
-                            await loop.run_in_executor(
-                                executor, db_utils.create_basic_album_entry,
-                                artist_name, album_name, cover_url, mbid, spotify_album_id, spotify_artist_id
+                            from .artist_recommendations import validate_album_with_discogs
+                            
+                            discogs_album = await loop.run_in_executor(
+                                executor, validate_album_with_discogs,
+                                artist_name, album_name, discogs_key, discogs_secret
                             )
                             
-                            all_recommendations.append({
-                                "artist_name": artist_name,
-                                "album_name": album_name,
-                                "year": None,
-                                "discogs_master_id": None,
-                                "discogs_release_id": None,
-                                "rating": None,
-                                "votes": None,
-                                "cover_url": cover_url,
-                                "spotify_id": spotify_album_id,
-                                "lastfm_playcount": playcount,
-                                "source": "lastfm"
-                            })
-                        else:
-                            log_event("recommender-service", "INFO", 
-                                     f"Skipped non-vinyl album: {artist_name} - {album_name}")
+                            if discogs_album:
+                                # Album is valid in Discogs, use its data
+                                log_event("recommender-service", "INFO", 
+                                         f"✓ Validated with Discogs: {artist_name} - {album_name}")
+                                
+                                # Save as partial record with Discogs IDs
+                                await loop.run_in_executor(
+                                    executor, db_utils.create_basic_album_entry,
+                                    artist_name, discogs_album["title"], discogs_album["cover_image"],
+                                    mbid, None, None,
+                                    discogs_album["discogs_master_id"], discogs_album["discogs_release_id"]
+                                )
+                                
+                                all_recommendations.append({
+                                    "artist_name": artist_name,
+                                    "album_name": discogs_album["title"],
+                                    "year": discogs_album["year"],
+                                    "discogs_master_id": discogs_album["discogs_master_id"],
+                                    "discogs_release_id": discogs_album["discogs_release_id"],
+                                    "rating": None,
+                                    "votes": None,
+                                    "cover_url": discogs_album["cover_image"],
+                                    "lastfm_playcount": playcount,
+                                    "source": "lastfm",
+                                    "is_partial": 1
+                                })
+                            else:
+                                # Album not found or doesn't pass filters - SKIP IT
+                                log_event("recommender-service", "INFO", 
+                                         f"✗ Skipped (not in Discogs or filtered): {artist_name} - {album_name}")
+                        except Exception as e:
+                            log_event("recommender-service", "WARNING", 
+                                     f"Discogs validation failed: {artist_name} - {album_name}: {str(e)}")
                         
                 except Exception as e:
                     log_event("recommender-service", "ERROR", 
@@ -529,16 +525,47 @@ async def artist_single_recommendation(request: SingleArtistRequest):
             return {"recommendations": recommendations, "total": len(recommendations), "artist_name": request.artist_name}
             
         else:
-            # CACHE MISS: Do NOT go to Discogs (too slow for interactive use)
-            # Fallback immediately to Spotify (Fast, creates partial records)
+            # CACHE MISS: Use Discogs Search Fallback (Vinyl only, Top Popularity)
             log_event("recommender-service", "INFO", 
-                     f"○ Cache MISS for {request.artist_name}. Falling back to Spotify for speed.")
+                     f"○ Cache MISS for {request.artist_name}. Using Discogs Search Fallback.")
             
-            return await _generate_spotify_recommendations(
-                request.artist_name, 
-                request.top_albums,
-                user_id=None
+            discogs_albums = get_top_albums_from_discogs_search(
+                request.artist_name,
+                discogs_key,
+                discogs_secret,
+                limit=request.top_albums
             )
+            
+            recommendations = []
+            for album in discogs_albums:
+                # Save as partial record
+                db_utils.create_basic_album_entry(
+                    artist_name=album["artist_name"],
+                    album_name=album["title"],
+                    cover_url=album["cover_image"],
+                    discogs_master_id=album["discogs_master_id"],
+                    discogs_release_id=album["discogs_release_id"]
+                )
+                
+                rec = {
+                    "album_name": album["title"],
+                    "artist_name": album["artist_name"],
+                    "year": album["year"],
+                    "rating": None, # Search doesn't give rating
+                    "votes": None,
+                    "discogs_master_id": album["discogs_master_id"] or album["discogs_release_id"],
+                    "discogs_type": "master" if album["discogs_master_id"] else "release",
+                    "image_url": album["cover_image"] or "https://via.placeholder.com/300x300?text=No+Cover",
+                    "source": "artist_based_partial",
+                    "is_partial": 1
+                }
+                recommendations.append(rec)
+            
+            elapsed = time.time() - start_time
+            log_event("recommender-service", "INFO", 
+                     f"✓ Discogs Fallback for {request.artist_name}: {len(recommendations)} albums in {elapsed:.2f}s")
+            
+            return {"recommendations": recommendations, "total": len(recommendations), "artist_name": request.artist_name}
 
     except Exception as e:
         log_event("recommender-service", "ERROR", f"Failed to generate recommendations for {request.artist_name}: {str(e)}")

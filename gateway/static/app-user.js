@@ -193,7 +193,7 @@ async function generateAndSaveRecommendations(userId, lastfmUsername) {
                                         artist_name: artistName,
                                         top_albums: 3,
                                         user_id: userId,  // For logging
-                                        cache_only: true  // Only check cache, don't do slow lookups
+                                        cache_only: false  // Allow backend to perform Discogs fallback
                                     })
                                 });
 
@@ -201,16 +201,17 @@ async function generateAndSaveRecommendations(userId, lastfmUsername) {
                                     const data = await resp.json();
                                     if (data.recommendations && data.recommendations.length > 0) {
                                         recs = data.recommendations;
-                                        console.log(`✓ Cache hit for ${artistName}: ${recs.length} recs`);
+                                        console.log(`✓ Recommendations for ${artistName}: ${recs.length} recs`);
                                     } else {
-                                        console.log(`⚠ Cache miss for ${artistName}, using Spotify`);
+                                        console.log(`⚠ No recommendations found for ${artistName}`);
                                     }
                                 }
                             } catch (e) {
-                                console.warn(`Canonical cache check failed for ${artistName}`, e);
+                                console.warn(`Canonical check failed for ${artistName}`, e);
                             }
 
-                            // Fallback to Spotify if no cache
+                            // Fallback to Spotify REMOVED - We now use Discogs fallback in backend
+                            /*
                             if (recs.length === 0) {
                                 console.log(`→ Using Spotify for ${artistName}`);
                                 try {
@@ -220,7 +221,7 @@ async function generateAndSaveRecommendations(userId, lastfmUsername) {
                                         body: JSON.stringify({
                                             artist_name: artistName,
                                             top_albums: 5,
-                                            user_id: userId  // For logging
+                                            user_id: userId
                                         })
                                     });
 
@@ -235,6 +236,7 @@ async function generateAndSaveRecommendations(userId, lastfmUsername) {
                                     console.warn(`Spotify fallback failed for ${artistName}`, e);
                                 }
                             }
+                            */
 
                             if (recs.length > 0) {
                                 manualRecs.push(...recs);

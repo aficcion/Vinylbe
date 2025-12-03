@@ -1,0 +1,248 @@
+{
+    "categories": [
+        {
+            "name": "Rock & Alternative",
+            "genres": [
+                {
+                    "id": "rock",
+                    "name": "Rock"
+                },
+                {
+                    "id": "alternative",
+                    "name": "Alternative"
+                },
+                {
+                    "id": "indie",
+                    "name": "Indie"
+                },
+                {
+                    "id": "punk",
+                    "name": "Punk"
+                },
+                {
+                    "id": "grunge",
+                    "name": "Grunge"
+                },
+                {
+                    "id": "metal",
+                    "name": "Metal"
+                },
+                {
+                    "id": "hard rock",
+                    "name": "Hard Rock"
+                },
+                {
+                    "id": "progressive rock",
+                    "name": "Progressive Rock"
+                },
+                {
+                    "id": "psychedelic",
+                    "name": "Psychedelic"
+                }
+            ]
+        },
+        {
+            "name": "Pop & Dance",
+            "genres": [
+                {
+                    "id": "pop",
+                    "name": "Pop"
+                },
+                {
+                    "id": "dance",
+                    "name": "Dance"
+                },
+                {
+                    "id": "disco",
+                    "name": "Disco"
+                },
+                {
+                    "id": "synth-pop",
+                    "name": "Synth-Pop"
+                },
+                {
+                    "id": "electropop",
+                    "name": "Electropop"
+                },
+                {
+                    "id": "k-pop",
+                    "name": "K-Pop"
+                }
+            ]
+        },
+        {
+            "name": "Electronic",
+            "genres": [
+                {
+                    "id": "electronic",
+                    "name": "Electronic"
+                },
+                {
+                    "id": "house",
+                    "name": "House"
+                },
+                {
+                    "id": "techno",
+                    "name": "Techno"
+                },
+                {
+                    "id": "trance",
+                    "name": "Trance"
+                },
+                {
+                    "id": "dubstep",
+                    "name": "Dubstep"
+                },
+                {
+                    "id": "drum and bass",
+                    "name": "Drum and Bass"
+                },
+                {
+                    "id": "ambient",
+                    "name": "Ambient"
+                },
+                {
+                    "id": "edm",
+                    "name": "EDM"
+                }
+            ]
+        },
+        {
+            "name": "Hip-Hop & R&B",
+            "genres": [
+                {
+                    "id": "hip hop",
+                    "name": "Hip Hop"
+                },
+                {
+                    "id": "rap",
+                    "name": "Rap"
+                },
+                {
+                    "id": "rnb",
+                    "name": "R&B"
+                },
+                {
+                    "id": "soul",
+                    "name": "Soul"
+                },
+                {
+                    "id": "funk",
+                    "name": "Funk"
+                }
+            ]
+        },
+        {
+            "name": "Jazz & Blues",
+            "genres": [
+                {
+                    "id": "jazz",
+                    "name": "Jazz"
+                },
+                {
+                    "id": "blues",
+                    "name": "Blues"
+                },
+                {
+                    "id": "bebop",
+                    "name": "Bebop"
+                },
+                {
+                    "id": "swing",
+                    "name": "Swing"
+                },
+                {
+                    "id": "smooth jazz",
+                    "name": "Smooth Jazz"
+                }
+            ]
+        },
+        {
+            "name": "Classical & World",
+            "genres": [
+                {
+                    "id": "classical",
+                    "name": "Classical"
+                },
+                {
+                    "id": "opera",
+                    "name": "Opera"
+                },
+                {
+                    "id": "world",
+                    "name": "World"
+                },
+                {
+                    "id": "folk",
+                    "name": "Folk"
+                },
+                {
+                    "id": "country",
+                    "name": "Country"
+                },
+                {
+                    "id": "bluegrass",
+                    "name": "Bluegrass"
+                }
+            ]
+        },
+        {
+            "name": "Latin",
+            "genres": [
+                {
+                    "id": "latin",
+                    "name": "Latin"
+                },
+                {
+                    "id": "reggaeton",
+                    "name": "Reggaeton"
+                },
+                {
+                    "id": "salsa",
+                    "name": "Salsa"
+                },
+                {
+                    "id": "bachata",
+                    "name": "Bachata"
+                },
+                {
+                    "id": "cumbia",
+                    "name": "Cumbia"
+                },
+                {
+                    "id": "flamenco",
+                    "name": "Flamenco"
+                }
+            ]
+        },
+        {
+            "name": "Other",
+            "genres": [
+                {
+                    "id": "reggae",
+                    "name": "Reggae"
+                },
+                {
+                    "id": "ska",
+                    "name": "Ska"
+                },
+                {
+                    "id": "experimental",
+                    "name": "Experimental"
+                },
+                {
+                    "id": "soundtrack",
+                    "name": "Soundtrack"
+                },
+                {
+                    "id": "instrumental",
+                    "name": "Instrumental"
+                },
+                {
+                    "id": "singer-songwriter",
+                    "name": "Singer-Songwriter"
+                }
+            ]
+        }
+    ]
+}

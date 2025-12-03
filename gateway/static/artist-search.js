@@ -209,17 +209,29 @@ class ArtistSearch {
                             };
                             console.log(`✓ Cached ${recs.length} recommendations for ${artist.name} (Canonical)`);
                         } else {
-                            // Fallback to Spotify
-                            console.warn(`⚠ No canonical albums found for ${artist.name}, trying Spotify fallback...`);
-                            await this.fetchSpotifyRecommendations(artist);
+                            // Fallback to Spotify REMOVED
+                            console.warn(`⚠ No canonical albums found for ${artist.name}`);
+                            this.recommendationsCache[artist.name] = {
+                                status: 'error',
+                                error: 'No vinyl albums found',
+                                timestamp: Date.now()
+                            };
                         }
                     } else {
-                        console.warn(`⚠ Canonical search failed for ${artist.name}, trying Spotify fallback...`);
-                        await this.fetchSpotifyRecommendations(artist);
+                        console.warn(`⚠ Canonical search failed for ${artist.name}`);
+                        this.recommendationsCache[artist.name] = {
+                            status: 'error',
+                            error: 'Search failed',
+                            timestamp: Date.now()
+                        };
                     }
                 } catch (error) {
                     console.error(`✗ Error fetching canonical recommendations for ${artist.name}:`, error);
-                    await this.fetchSpotifyRecommendations(artist);
+                    this.recommendationsCache[artist.name] = {
+                        status: 'error',
+                        error: error.message,
+                        timestamp: Date.now()
+                    };
                 } finally {
                     this.loadingArtists.delete(artist.name);
                     this.pendingPromises.delete(artist.name);

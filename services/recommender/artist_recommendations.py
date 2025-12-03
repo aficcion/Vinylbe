@@ -661,3 +661,160 @@ def get_artist_based_recommendations(artist_names: List[str], discogs_key: str,
         recommendations.append(rec)
     
     return recommendations
+
+
+def get_top_albums_from_discogs_search(artist_name: str, key: str, secret: str, limit: int = 3) -> List[Dict[str, Any]]:
+    """
+    Search Discogs for Vinyl LPs by the artist, filter, sort by popularity, and return top albums.
+    Used as a fallback when local DB has no data.
+    """
+    print(f"[DISCOGS SEARCH] Searching top vinyls for: {artist_name}")
+    
+    try:
+        # Search for Vinyl Albums/LPs by the artist
+        # We fetch more than needed to allow for filtering
+        data = _discogs_get("/database/search", {
+            "artist": artist_name,
+            "format": "Vinyl,LP,Album",
+            "type": "release",  # We want releases to get specific vinyl editions
+            "per_page": 50      # Fetch enough to filter
+        }, key, secret, sleep_after_ok=1.0)
+        
+        results = data.get("results", [])
+        if not results:
+            print(f"[DISCOGS SEARCH] No results found for {artist_name}")
+            return []
+            
+        filtered_albums = []
+        seen_titles = set()
+        
+        # Keywords to exclude
+        exclude_keywords = ["live", "compilation", "anthology", "best of", "greatest hits", "deluxe", "promo", "single", "ep", "directo"]
+        
+        for res in results:
+            title = res.get("title", "")
+            # Title format is usually "Artist - Album"
+            if " - " in title:
+                album_title = title.split(" - ", 1)[1]
+            else:
+                album_title = title
+                
+            album_title_lower = album_title.lower()
+            
+            # 1. Filter by keywords
+            if any(keyword in album_title_lower for keyword in exclude_keywords):
+                continue
+                
+            # 2. Filter by format (double check)
+            formats = res.get("format", [])
+            format_str = ", ".join(formats).lower()
+            if "promo" in format_str or "unofficial" in format_str:
+                continue
+                
+            # 3. Deduplicate by title (simple normalization)
+            norm_title = re.sub(r'[^a-z0-9]', '', album_title_lower)
+            if norm_title in seen_titles:
+                continue
+            
+            seen_titles.add(norm_title)
+            
+            # 4. Calculate score (Have + Want)
+            community = res.get("community", {})
+            have = int(community.get("have", 0))
+            want = int(community.get("want", 0))
+            score = have + want
+            
+            # 5. Get IDs
+            discogs_id = res.get("id")
+            master_id = res.get("master_id") # Might be present in search results
+            
+            filtered_albums.append({
+                "title": album_title,
+                "year": res.get("year", ""),
+                "cover_image": res.get("cover_image") or res.get("thumb", ""),
+                "discogs_release_id": str(discogs_id) if discogs_id else None,
+                "discogs_master_id": str(master_id) if master_id else None,
+                "score": score,
+                "have": have,
+                "want": want,
+                "artist_name": artist_name # Keep original search artist name
+            })
+            
+        # Sort by score (popularity)
+        filtered_albums.sort(key=lambda x: x["score"], reverse=True)
+        
+        # Take top N
+        top_albums = filtered_albums[:limit]
+        
+        print(f"[DISCOGS SEARCH] Found {len(filtered_albums)} valid albums, returning top {len(top_albums)}")
+        for alb in top_albums:
+            print(f"  - {alb['title']} (Score: {alb['score']}, Year: {alb['year']})")
+            
+        return top_albums
+        
+    except Exception as e:
+        print(f"[DISCOGS SEARCH] Error searching for {artist_name}: {e}")
+        return []
+
+
+def validate_album_with_discogs(artist_name: str, album_title: str, key: str, secret: str) -> Optional[Dict[str, Any]]:
+    """
+    Search for a specific album in Discogs to validate if it exists as a Vinyl/LP 
+    and passes our filters (no singles, live, etc.).
+    Returns album data if valid, None otherwise.
+    """
+    try:
+        # Search for specific release title
+        data = _discogs_get("/database/search", {
+            "artist": artist_name,
+            "release_title": album_title,
+            "format": "Vinyl,LP,Album",
+            "type": "release",
+            "per_page": 5  # We only need to find one valid match
+        }, key, secret, sleep_after_ok=1.0)
+        
+        results = data.get("results", [])
+        if not results:
+            return None
+            
+        # Keywords to exclude (same as above)
+        exclude_keywords = ["live", "compilation", "anthology", "best of", "greatest hits", "deluxe", "promo", "single", "ep", "directo"]
+        
+        for res in results:
+            res_title = res.get("title", "")
+            # Title format is usually "Artist - Album"
+            if " - " in res_title:
+                real_title = res_title.split(" - ", 1)[1]
+            else:
+                real_title = res_title
+                
+            title_lower = real_title.lower()
+            
+            # 1. Filter by keywords
+            if any(keyword in title_lower for keyword in exclude_keywords):
+                continue
+                
+            # 2. Filter by format details
+            formats = res.get("format", [])
+            format_str = ", ".join(formats).lower()
+            if "promo" in format_str or "unofficial" in format_str:
+                continue
+                
+            # Found a valid match!
+            discogs_id = res.get("id")
+            master_id = res.get("master_id")
+            
+            return {
+                "title": real_title, # Use the clean title from Discogs
+                "year": res.get("year", ""),
+                "cover_image": res.get("cover_image") or res.get("thumb", ""),
+                "discogs_release_id": str(discogs_id) if discogs_id else None,
+                "discogs_master_id": str(master_id) if master_id else None,
+                "artist_name": artist_name
+            }
+            
+        return None
+        
+    except Exception as e:
+        print(f"[DISCOGS VALIDATION] Error validating {artist_name} - {album_title}: {e}")
+        return None

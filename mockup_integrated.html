@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vinilogy - Descubre Vinilos</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        /* Copied from index.html styles for context */
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f5f5f5;
+            --text-primary: #000000;
+            --text-secondary: #666666;
+            --border-color: #e0e0e0;
+            --accent-color: #1DB954;
+            --card-bg: #ffffff;
+            --background: #ffffff;
+            --text: #000000;
+            --primary: #667eea;
+            --primary-fade: rgba(102, 126, 234, 0.1);
+            --card-background: #ffffff;
+            --error: #dc3545;
+            --hover-color: #f0f0f0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            margin: 0;
+            min-height: 100vh;
+        }
+
+        .header {
+            padding: 1.5rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-primary);
+            position: relative;
+            z-index: 10;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .login-btn {
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 0.5rem 1.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        /* Mosaic Styles Mockup */
+        .mosaic-container {
+            position: relative;
+            height: 500px;
+            overflow: hidden;
+            background: #f0f0f0;
+        }
+
+        .mosaic-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 0;
+            opacity: 0.6;
+        }
+
+        .mosaic-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(to bottom, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 1));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        .mosaic-content h1 {
+            font-size: 3.5rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+            letter-spacing: -1px;
+        }
+
+        .mosaic-content p {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+            margin-bottom: 3rem;
+        }
+
+        /* Modal Styles */
+        .login-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(4px);
+        }
+
+        .login-modal-overlay.active {
+            display: flex;
+        }
+
+        .login-modal {
+            background: var(--bg-primary);
+            padding: 2.5rem;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            position: relative;
+        }
+
+        .login-modal h2 {
+            margin-top: 0;
+            margin-bottom: 0.5rem;
+        }
+
+        .login-modal p {
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+        }
+
+        .modal-close-btn {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: var(--text-secondary);
+        }
+
+        .login-options {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .login-option-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            padding: 0.9rem;
+            border-radius: 50px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid transparent;
+            font-size: 1rem;
+            transition: transform 0.2s;
+        }
+
+        .login-option-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .login-option-btn.lastfm {
+            background: #D51007;
+            color: white;
+        }
+
+        .login-option-btn.google {
+            background: white;
+            color: #1f1f1f;
+            border-color: #dadce0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .login-option-btn.discogs {
+            background: #333;
+            color: white;
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .google-icon {
+            width: 20px;
+            height: 20px;
+        }
+
+        /* Recommendations View Styles */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+            border-top: 1px solid #eee;
+        }
+
+        .recommendations-header {
+            margin-bottom: 2rem;
+        }
+
+        .recommendations-title-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 2rem;
+        }
+
+        .recommendations-header h2 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .recommendations-header p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        .spotify-btn-small {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--accent-color);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 50px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(29, 185, 84, 0.3);
+            white-space: nowrap;
+        }
+
+        .google-btn-small {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: white;
+            color: #1f1f1f;
+            padding: 0.75rem 1.5rem;
+            border-radius: 50px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+            border: 1px solid #dadce0;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            white-space: nowrap;
+        }
+
+        .google-btn-small:hover {
+            background: #f8f9fa;
+            transform: translateY(-2px);
+        }
+
+        .albums-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .album-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            height: 300px;
+            background: #f9f9f9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #ccc;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <div class="logo">Vinilogy</div>
+        <div class="header-right">
+            <!-- UPDATED: Button Text -->
+            <button class="login-btn" onclick="document.getElementById('login-modal').classList.add('active')">
+                Iniciar Sesión / Crear Cuenta
+            </button>
+        </div>
+    </div>
+
+    <div class="mosaic-container">
+        <div class="mosaic-grid" style="position: absolute; width: 100%; height: 100%;">
+            <div
+                style="background-color: #ddd; height: 150px; width: 150px; position: absolute; top:0; left:0; opacity: 0.5;">
+            </div>
+            <div
+                style="background-color: #ccc; height: 150px; width: 150px; position: absolute; top:0; left:150px; opacity: 0.5;">
+            </div>
+            <div
+                style="background-color: #bbb; height: 150px; width: 150px; position: absolute; top:0; left:300px; opacity: 0.5;">
+            </div>
+            <div
+                style="background-color: #aaa; height: 150px; width: 150px; position: absolute; top:150px; left:0; opacity: 0.5;">
+            </div>
+            <div
+                style="background-color: #999; height: 150px; width: 150px; position: absolute; top:150px; left:150px; opacity: 0.5;">
+            </div>
+        </div>
+
+        <div class="mosaic-overlay">
+            <div class="mosaic-content">
+                <h1>Vinilogy</h1>
+                <p>Descubre Vinilos Basados en tu Música</p>
+                <!-- Hero actions removed as they are now in the modal/header flow per request? 
+                     Or kept as quick actions? Keeping them for now but focusing on the modal request. -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Recommendations View (Visible for Mockup) -->
+    <div class="container">
+        <div class="recommendations-header">
+            <div class="recommendations-title-row">
+                <div>
+                    <h2>Recomendaciones</h2>
+                    <p>Basado en tu escucha</p>
+                </div>
+                <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                    <!-- Existing Last.fm button -->
+                    <button class="spotify-btn-small"
+                        style="background: linear-gradient(135deg, #1DB954 0%, #1ed760 100%);">
+                        🎵 Conectar Last.fm
+                    </button>
+
+                    <!-- NEW: Google Button in Recommendations -->
+                    <button class="google-btn-small">
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="G"
+                            class="google-icon">
+                        Sign in with Google
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="albums-grid">
+            <div class="album-card">Album 1</div>
+            <div class="album-card">Album 2</div>
+            <div class="album-card">Album 3</div>
+            <div class="album-card">Album 4</div>
+        </div>
+    </div>
+
+    <!-- Login Modal (Triggered by Header Button) -->
+    <div id="login-modal" class="login-modal-overlay active">
+        <div class="login-modal">
+            <button class="modal-close-btn"
+                onclick="document.getElementById('login-modal').classList.remove('active')">✕</button>
+            <h2>Bienvenido a Vinilogy</h2>
+            <p>Inicia sesión o crea tu cuenta para guardar tu colección</p>
+
+            <div class="login-options">
+                <button class="login-option-btn google">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="G"
+                        class="google-icon">
+                    Continuar con Google
+                </button>
+
+                <button class="login-option-btn lastfm">
+                    <span>🎵</span> Conectar Last.fm
+                </button>
+
+                <button class="login-option-btn discogs" title="Próximamente">
+                    <span>💿</span> Conectar Discogs (Pronto)
+                </button>
+            </div>
+        </div>
+    </div>
+
+</body>
+
+</html>

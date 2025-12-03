@@ -192,7 +192,7 @@ def get_cached_album(artist_name: str, album_name: str, mbid: str = None, spotif
         log_event("recommender-db", "ERROR", f"Error fetching album: {str(e)}")
         return None
 
-def create_basic_album_entry(artist_name: str, album_name: str, cover_url: str = None, mbid: str = None, spotify_id: str = None, artist_spotify_id: str = None) -> bool:
+def create_basic_album_entry(artist_name: str, album_name: str, cover_url: str = None, mbid: str = None, spotify_id: str = None, artist_spotify_id: str = None, discogs_master_id: str = None, discogs_release_id: str = None) -> bool:
     """Create basic artist and album entries"""
     # log_event("recommender-db", "INFO", f"💥💥💥 FUNCTION ENTRY: create_basic_album_entry for {artist_name} - {album_name}")
     try:
@@ -228,24 +228,72 @@ def create_basic_album_entry(artist_name: str, album_name: str, cover_url: str =
                     pass
             
             if not existing:
+                # Fetch all albums for this artist to do a normalized comparison in Python
+                # SQLite's LIKE is case-insensitive for ASCII but not robust for accents/unicode without extensions
+                cur.execute("SELECT id, title FROM albums WHERE artist_id = ?", (artist_id,))
+                artist_albums = cur.fetchall()
+                
+                import unicodedata
+                def normalize(s):
+                    return ''.join(c for c in unicodedata.normalize('NFD', s)
+                                 if unicodedata.category(c) != 'Mn').lower().replace(' ', '')
+                
+                target_norm = normalize(album_name)
+                
+                for alb in artist_albums:
+                    if normalize(alb['title']) == target_norm:
+                        existing = alb
+                        log_event("recommender-db", "INFO", f"Found existing album via normalization: '{alb['title']}' matches '{album_name}'")
+                        break
+            
+            if not existing:
+                # Fallback to exact match just in case
                 cur.execute("SELECT id FROM albums WHERE artist_id = ? AND title = ?", (artist_id, album_name))
                 existing = cur.fetchone()
 
             if existing:
                 # Update existing record with new IDs if they are missing
                 updates = []
+                update_vals = []
+                
                 if mbid and "mbid" in columns:
                     updates.append("mbid = ?")
+                    update_vals.append(mbid)
                 if spotify_id and "spotify_id" in columns:
                     updates.append("spotify_id = ?")
+                    update_vals.append(spotify_id)
+                if discogs_master_id and "discogs_master_id" in columns:
+                    updates.append("discogs_master_id = ?")
+                    update_vals.append(discogs_master_id)
+                if discogs_release_id and "discogs_release_id" in columns:
+                    updates.append("discogs_release_id = ?")
+                    update_vals.append(discogs_release_id)
                 
                 if updates:
-                    # Simplified update logic
+                    # Simplified update logic - only update if currently NULL to avoid overwriting good data
+                    # But for simplicity here we just update. In a real scenario we might check IS NULL.
+                    # Given this is "create basic", we assume we are filling in gaps.
+                    set_clause = ", ".join(updates)
+                    update_vals.append(existing['id'])
+                    
                     try:
+                        # This is a bit aggressive (overwriting), but acceptable for filling in IDs
+                        # Ideally we would do "mbid = COALESCE(mbid, ?)" but SQLite syntax is different
+                        # For now, let's just update specific fields if we have them
+                        pass 
+                        # Actually, let's only update if we have something new.
+                        # The previous logic was:
+                        # cur.execute("UPDATE albums SET mbid = ? WHERE id = ? AND mbid IS NULL", (mbid, existing['id']))
+                        
                         if mbid and "mbid" in columns:
                             cur.execute("UPDATE albums SET mbid = ? WHERE id = ? AND mbid IS NULL", (mbid, existing['id']))
                         if spotify_id and "spotify_id" in columns:
                             cur.execute("UPDATE albums SET spotify_id = ? WHERE id = ? AND spotify_id IS NULL", (spotify_id, existing['id']))
+                        if discogs_master_id and "discogs_master_id" in columns:
+                            cur.execute("UPDATE albums SET discogs_master_id = ? WHERE id = ? AND discogs_master_id IS NULL", (discogs_master_id, existing['id']))
+                        if discogs_release_id and "discogs_release_id" in columns:
+                            cur.execute("UPDATE albums SET discogs_release_id = ? WHERE id = ? AND discogs_release_id IS NULL", (discogs_release_id, existing['id']))
+                            
                         conn.commit()
                     except sqlite3.OperationalError:
                         log_event("recommender-db", "WARNING", "UPDATE failed despite columns existing in schema")
@@ -265,8 +313,14 @@ def create_basic_album_entry(artist_name: str, album_name: str, cover_url: str =
             if spotify_id and "spotify_id" in columns:
                 insert_cols.append("spotify_id")
                 insert_vals.append(spotify_id)
-            else:
-                log_event("recommender-db", "WARNING", f"Skipping spotify_id for {album_name} because column missing in schema")
+            
+            if discogs_master_id and "discogs_master_id" in columns:
+                insert_cols.append("discogs_master_id")
+                insert_vals.append(discogs_master_id)
+                
+            if discogs_release_id and "discogs_release_id" in columns:
+                insert_cols.append("discogs_release_id")
+                insert_vals.append(discogs_release_id)
 
             placeholders = ", ".join(["?"] * len(insert_cols))
             col_names = ", ".join(insert_cols)
