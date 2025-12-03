@@ -1,4 +1,10 @@
 /* Global */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
 :root {
     /* Cinematic Modern Theme */
     --bg-primary: #0f0f0f;
@@ -461,8 +467,37 @@ tr:hover td {
 
 /* Mobile Responsiveness */
 @media (max-width: 768px) {
+
+    /* Don't hide the container, just the heavy visuals */
     .mosaic-container {
+        height: auto;
+        background: transparent;
+        margin-bottom: 2rem;
+    }
+
+    .mosaic-grid {
         display: none;
+    }
+
+    .mosaic-overlay {
+        position: relative;
+        background: none;
+        padding: 0;
+        height: auto;
+    }
+
+    .mosaic-content h1 {
+        font-size: 2.5rem;
+        background: var(--accent-gradient);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .mosaic-content p {
+        color: var(--text-secondary);
+        text-shadow: none;
+        font-size: 1.1rem;
     }
 
     .container {

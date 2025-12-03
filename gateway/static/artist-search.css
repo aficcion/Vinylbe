@@ -574,10 +574,79 @@
 }
 
 @media (max-width: 768px) {
+    .artist-search-modal {
+        padding: 10px;
+        overflow-x: hidden;
+        width: 100%;
+        max-width: 100%;
+    }
 
-    /* Limit search results to 10 items on mobile */
-    .artist-search-modal .artist-grid .artist-card:nth-child(n+11),
-    .artist-search-modal .album-grid .album-card:nth-child(n+11) {
+    /* Ensure all containers respect width */
+    .artist-search-input-wrapper,
+    .search-results-container,
+    .artist-search-modal .artist-grid,
+    .artist-search-modal .album-grid {
+        width: 100%;
+        max-width: 100%;
+    }
+
+    /* Limit search results to 5 items on mobile */
+    .artist-search-modal .artist-grid .artist-card:nth-child(n+6),
+    .artist-search-modal .album-grid .album-card:nth-child(n+6) {
         display: none;
+    }
+
+    /* Force 1 column layout on mobile */
+    .artist-search-modal .artist-grid,
+    .artist-search-modal .album-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Remove container padding to match search box width */
+    .search-results-container {
+        padding-right: 0;
+        margin-right: 0;
+    }
+
+    /* Hide add buttons on mobile - entire card is clickable */
+    .artist-search-modal .add-artist-btn,
+    .artist-search-modal .add-album-btn {
+        display: none !important;
+    }
+
+    /* Make cards full width and clickable on mobile */
+    .artist-search-modal .artist-card,
+    .artist-search-modal .album-card {
+        width: 100%;
+        max-width: 100%;
+        padding: 12px;
+        margin: 0;
+    }
+
+    .artist-search-modal .artist-card:active,
+    .artist-search-modal .album-card:active {
+        background-color: var(--bg-secondary);
+        transform: scale(0.98);
+    }
+
+    /* Enable text wrapping for long titles */
+    .artist-search-modal .artist-name,
+    .artist-search-modal .album-title {
+        white-space: normal;
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        line-height: 1.3;
+    }
+
+    .artist-search-modal .artist-genres,
+    .artist-search-modal .album-artist {
+        white-space: normal;
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        line-height: 1.3;
     }
 }

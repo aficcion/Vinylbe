@@ -270,6 +270,28 @@ class ArtistSearch {
     }
 
     attachArtistCardListeners() {
+        const artistCards = document.querySelectorAll('.artist-card');
+
+        artistCards.forEach(card => {
+            card.addEventListener('click', (e) => {
+                // Prevent double triggering if clicking the button directly
+                if (e.target.closest('.add-artist-btn')) return;
+
+                const artistName = card.dataset.artistName;
+                const btn = card.querySelector('.add-artist-btn');
+                if (!btn) return;
+
+                const artist = JSON.parse(btn.dataset.artist);
+                const isSelected = this.selectedArtists.some(a => a.name === artist.name);
+
+                if (isSelected) {
+                    this.removeArtist(artist.name);
+                } else if (this.selectedArtists.length < this.options.maxArtists) {
+                    this.addArtist(artist);
+                }
+            });
+        });
+
         const addButtons = document.querySelectorAll('.add-artist-btn');
 
         addButtons.forEach(btn => {
@@ -288,6 +310,29 @@ class ArtistSearch {
     }
 
     attachAlbumCardListeners() {
+        const albumCards = document.querySelectorAll('.album-card');
+
+        albumCards.forEach(card => {
+            card.addEventListener('click', async (e) => {
+                // Prevent double triggering if clicking the button directly
+                if (e.target.closest('.add-album-btn')) return;
+
+                const btn = card.querySelector('.add-album-btn');
+                if (!btn || btn.disabled) return;
+
+                // Decode HTML entities before parsing JSON
+                const albumDataEscaped = btn.dataset.album;
+                const albumDataJson = albumDataEscaped
+                    .replace(/&quot;/g, '"')
+                    .replace(/&apos;/g, "'")
+                    .replace(/&lt;/g, '<')
+                    .replace(/&gt;/g, '>')
+                    .replace(/&amp;/g, '&');
+                const album = JSON.parse(albumDataJson);
+                await this.addAlbum(album, btn);
+            });
+        });
+
         const addButtons = document.querySelectorAll('.add-album-btn');
 
         addButtons.forEach(btn => {
