@@ -160,3 +160,4 @@ cython_debug/
 #.idea/vinylbe.db-shm
 vinylbe.db-wal
 logs/
+recovery_points/
