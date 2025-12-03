@@ -212,15 +212,24 @@ window.loadProfileSidebar = async function () {
             if (storedArtists) {
                 const artistNames = JSON.parse(storedArtists);
                 if (Array.isArray(artistNames) && artistNames.length > 0) {
-                    console.log(`[DEBUG] Loading ${artistNames.length} selected artists from localStorage (guest):`, artistNames);
-                    const list = document.getElementById('selected-artists-list');
-                    list.innerHTML = '';
+                    // Robust deduplication: trim strings and use Set
+                    const uniqueArtists = [...new Set(artistNames.map(name => String(name).trim()))];
 
-                    artistNames.forEach(artistName => {
-                        const li = document.createElement('li');
-                        li.textContent = artistName;
-                        list.appendChild(li);
-                    });
+                    console.log('[DEBUG] Raw artist names from localStorage:', artistNames);
+                    console.log(`[DEBUG] Deduplicated to ${uniqueArtists.length} artists:`, uniqueArtists);
+
+                    const list = document.getElementById('selected-artists-list');
+                    if (list) {
+                        list.innerHTML = ''; // Clear existing items
+
+                        uniqueArtists.forEach(artistName => {
+                            const li = document.createElement('li');
+                            li.textContent = artistName;
+                            list.appendChild(li);
+                        });
+                    } else {
+                        console.error('[DEBUG] selected-artists-list element not found!');
+                    }
 
                     selectedSection.style.display = 'block';
                     hasContent = true;

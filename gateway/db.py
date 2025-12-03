@@ -294,6 +294,14 @@ def add_user_selected_artist(
     conn = get_connection()
     try:
         cur = conn.cursor()
+        # Check if already exists
+        cur.execute(
+            "SELECT 1 FROM user_selected_artist WHERE user_id = ? AND artist_name = ?",
+            (user_id, artist_name),
+        )
+        if cur.fetchone():
+            return  # Already exists, do nothing
+
         cur.execute(
             "INSERT INTO user_selected_artist (user_id, artist_name, mbid, source) VALUES (?, ?, ?, ?)",
             (user_id, artist_name, mbid, source),
