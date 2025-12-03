@@ -7,8 +7,29 @@ window.albumStatuses = albumStatuses; // Expose to other scripts
 
 // Load album statuses from localStorage
 function loadAlbumStatuses() {
-    // localStorage loading removed
-    console.log('loadAlbumStatuses: skipping localStorage load, relying on backend sync');
+    const userId = localStorage.getItem('userId');
+
+    // Only load from localStorage for guest users
+    // Logged-in users rely on backend sync via syncAlbumStatusesFromRecs
+    if (!userId) {
+        console.log('Guest user: Loading album statuses from localStorage...');
+        let count = 0;
+
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('album_status_')) {
+                const status = localStorage.getItem(key);
+                // Key format: album_status_Artist::Album
+                // Convert back to Artist|Album for the Map
+                const mapKey = key.replace('album_status_', '').replace('::', '|');
+                albumStatuses.set(mapKey, status);
+                count++;
+            }
+        }
+        console.log(`Loaded ${count} album statuses from localStorage`);
+    } else {
+        console.log('Logged-in user: skipping localStorage load, relying on backend sync');
+    }
 }
 
 // Save album statuses to localStorage and DB
@@ -155,7 +176,7 @@ window.loadProfileSidebar = async function () {
         }
     }
 
-    // Load selected artists
+    // Load selected artists from DB (logged-in users) or localStorage (guest users)
     if (userId) {
         try {
             console.log('[DEBUG] Fetching selected artists for sidebar...');
@@ -183,6 +204,30 @@ window.loadProfileSidebar = async function () {
             }
         } catch (e) {
             console.error('Error loading selected artists:', e);
+        }
+    } else {
+        // Guest user: Load from localStorage
+        try {
+            const storedArtists = localStorage.getItem('selected_artist_names');
+            if (storedArtists) {
+                const artistNames = JSON.parse(storedArtists);
+                if (Array.isArray(artistNames) && artistNames.length > 0) {
+                    console.log(`[DEBUG] Loading ${artistNames.length} selected artists from localStorage (guest):`, artistNames);
+                    const list = document.getElementById('selected-artists-list');
+                    list.innerHTML = '';
+
+                    artistNames.forEach(artistName => {
+                        const li = document.createElement('li');
+                        li.textContent = artistName;
+                        list.appendChild(li);
+                    });
+
+                    selectedSection.style.display = 'block';
+                    hasContent = true;
+                }
+            }
+        } catch (e) {
+            console.error('Error loading selected artists from localStorage:', e);
         }
     }
 

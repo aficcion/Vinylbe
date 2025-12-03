@@ -382,9 +382,13 @@ function getRecArtistAndAlbum(rec) {
 }
 
 function syncAlbumStatusesFromRecs(recommendations) {
-    // Clear current map
+    // Clear current map ONLY for logged-in users who rely on DB sync
+    // Guest users have their statuses loaded from localStorage by loadAlbumStatuses()
+    const userId = localStorage.getItem('userId');
     if (typeof albumStatuses !== 'undefined') {
-        albumStatuses.clear();
+        if (userId) {
+            albumStatuses.clear();
+        }
         recommendations.forEach(rec => {
             const { artist, album } = getRecArtistAndAlbum(rec);
             // Sync all statuses from DB: neutral, favorite, owned, disliked
@@ -1214,6 +1218,22 @@ function checkCachedRecommendations() {
 
     if (cached) {
         const recommendations = JSON.parse(cached);
+
+        // Auto-fix: ensure all recommendations have source='manual' for filtering
+        let needsFix = false;
+        recommendations.forEach(rec => {
+            if (rec.source !== 'manual') {
+                rec.source = 'manual';
+                needsFix = true;
+            }
+        });
+
+        // Save back if we fixed any
+        if (needsFix) {
+            console.log('✓ Auto-fixed source field for cached recommendations');
+            localStorage.setItem('last_recommendations', JSON.stringify(recommendations));
+        }
+
         renderRecommendations(recommendations);
     }
 }
@@ -1233,7 +1253,7 @@ async function openArtistSearch() {
             onContinue: handleArtistSelection
         });
 
-        // Load selected artists from DB
+        // Load selected artists from DB (logged-in users) or localStorage (guest users)
         const userId = localStorage.getItem('userId');
         if (userId) {
             try {
@@ -1246,6 +1266,20 @@ async function openArtistSearch() {
                 }
             } catch (e) {
                 console.error('Error loading selected artists:', e);
+            }
+        } else {
+            // Guest user: Load from localStorage
+            try {
+                const storedArtists = localStorage.getItem('selected_artist_names');
+                if (storedArtists) {
+                    const artistNames = JSON.parse(storedArtists);
+                    if (Array.isArray(artistNames) && artistNames.length > 0) {
+                        console.log(`✓ Restoring ${artistNames.length} artists from localStorage (guest):`, artistNames);
+                        artistSearchComponent.restoreArtists(artistNames);
+                    }
+                }
+            } catch (e) {
+                console.error('Error loading selected artists from localStorage:', e);
             }
         }
     }
@@ -1320,6 +1354,11 @@ async function handleArtistSelection(selectedArtists, searchComponent) {
         if (typeof loadProfileSidebar === 'function') {
             loadProfileSidebar();
         }
+    } else {
+        // Guest user: also refresh sidebar
+        if (typeof loadProfileSidebar === 'function') {
+            loadProfileSidebar();
+        }
     }
 
     const artistNames = selectedArtists.map(a => a.name);
@@ -1381,6 +1420,13 @@ async function handleArtistSelection(selectedArtists, searchComponent) {
         }
     }
 
+    // Force source='manual' on all recommendations to ensure they appear in the artist filter
+    if (finalRecs.length > 0) {
+        finalRecs.forEach(rec => {
+            rec.source = 'manual';
+        });
+    }
+
     if (finalRecs.length === 0) {
         alert('No se encontraron recomendaciones para estos artistas.');
         return;
@@ -1420,10 +1466,46 @@ async function handleArtistSelection(selectedArtists, searchComponent) {
             renderRecommendations(finalRecs);
         }
     } else {
-        // Guest user: save to localStorage
-        localStorage.setItem('last_recommendations', JSON.stringify(finalRecs));
-        localStorage.setItem('last_updated', new Date().toISOString());
-        renderRecommendations(finalRecs);
+        // Guest user: merge with existing localStorage recommendations
+        try {
+            const existingRecs = localStorage.getItem('last_recommendations');
+            let mergedRecs = [...finalRecs];
+
+            if (existingRecs) {
+                const existing = JSON.parse(existingRecs);
+                console.log(`Found ${existing.length} existing recommendations in localStorage`);
+
+                // Create a map of new recs by key for deduplication
+                const newRecsMap = new Map();
+                finalRecs.forEach(rec => {
+                    const key = `${rec.artist_name}::${rec.album_name || rec.album_title}`;
+                    newRecsMap.set(key, rec);
+                });
+
+                // Add existing recs that aren't in the new set
+                // IMPORTANT: Ensure all existing recs also have source='manual'
+                existing.forEach(rec => {
+                    const key = `${rec.artist_name}::${rec.album_name || rec.album_title}`;
+                    if (!newRecsMap.has(key)) {
+                        // Ensure source is set to 'manual' for filtering
+                        rec.source = 'manual';
+                        mergedRecs.push(rec);
+                    }
+                });
+
+                console.log(`Merged: ${finalRecs.length} new + ${existing.length} existing = ${mergedRecs.length} total`);
+            }
+
+            localStorage.setItem('last_recommendations', JSON.stringify(mergedRecs));
+            localStorage.setItem('last_updated', new Date().toISOString());
+            renderRecommendations(mergedRecs);
+        } catch (e) {
+            console.error('Error merging recommendations:', e);
+            // Fallback to just saving new ones
+            localStorage.setItem('last_recommendations', JSON.stringify(finalRecs));
+            localStorage.setItem('last_updated', new Date().toISOString());
+            renderRecommendations(finalRecs);
+        }
     }
 }
 
