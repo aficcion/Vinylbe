@@ -282,7 +282,7 @@ def add_user_selected_artist(
     artist_name: str,
     mbid: Optional[str] = None,
     source: str = "manual",
-    spotify_id: Optional[str] = None,
+    spotify_id: Optional[str] = None,  # Keep parameter for backward compatibility but don't use it
 ) -> None:
     """Insert a new selected artist for the user.
 
@@ -295,8 +295,8 @@ def add_user_selected_artist(
     try:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO user_selected_artist (user_id, artist_name, mbid, source, spotify_id) VALUES (?, ?, ?, ?, ?)",
-            (user_id, artist_name, mbid, source, spotify_id),
+            "INSERT INTO user_selected_artist (user_id, artist_name, mbid, source) VALUES (?, ?, ?, ?)",
+            (user_id, artist_name, mbid, source),
         )
         conn.commit()
     finally:
@@ -330,6 +330,39 @@ def remove_user_selected_artist(user_id: int, selection_id: int) -> bool:
         )
         conn.commit()
         return cur.rowcount > 0
+    finally:
+        conn.close()
+
+def upsert_recommendation_status(
+    user_id: int, artist_name: str, album_title: str, status: str
+) -> None:
+    """Update or insert a recommendation status."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        # Check if exists
+        cur.execute(
+            "SELECT id FROM recommendation WHERE user_id = ? AND artist_name = ? AND album_title = ?",
+            (user_id, artist_name, album_title),
+        )
+        row = cur.fetchone()
+        
+        if row:
+            # Update existing
+            cur.execute(
+                "UPDATE recommendation SET status = ?, updated_at = datetime('now') WHERE id = ?",
+                (status, row[0]),
+            )
+        else:
+            # Insert new
+            cur.execute(
+                """
+                INSERT INTO recommendation (user_id, artist_name, album_title, status, source)
+                VALUES (?, ?, ?, ?, 'manual')
+                """,
+                (user_id, artist_name, album_title, status),
+            )
+        conn.commit()
     finally:
         conn.close()
 

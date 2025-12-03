@@ -119,12 +119,75 @@
                     localStorage.removeItem('vinilogy_lastfm_token');
                     localStorage.removeItem('vinilogy_lastfm_auth_pending');
 
-                    // Create/get user in database
+                    // === COLLECT GUEST DATA ===
+                    console.log('[Sync Debug] === STARTING GUEST DATA COLLECTION ===');
+                    console.log('[Sync Debug] localStorage length:', localStorage.length);
+                    console.log('[Sync Debug] All localStorage keys:', Object.keys(localStorage));
+
+                    // 1. Collect album statuses
+                    const albumStatuses = {};
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        if (key && key.startsWith('album_status_')) {
+                            const statusKey = key.replace('album_status_', '').replace('::', '|');
+                            albumStatuses[statusKey] = localStorage.getItem(key);
+                        }
+                    }
+                    console.log('[Sync Debug] Album statuses collected:', albumStatuses);
+
+                    // 2. Collect selected artists
+                    const selectedArtistNames = localStorage.getItem('selected_artist_names');
+                    console.log('[Sync Debug] Raw selected_artist_names from localStorage:', selectedArtistNames);
+
+                    let selectedArtists = [];
+                    if (selectedArtistNames) {
+                        try {
+                            selectedArtists = JSON.parse(selectedArtistNames);
+                            console.log('[Sync Debug] Parsed selected_artist_names:', selectedArtists);
+                            console.log('[Sync Debug] Is array?', Array.isArray(selectedArtists));
+                        } catch (e) {
+                            console.error('[Sync Debug] Error parsing selected_artist_names:', e);
+                        }
+                    }
+                    console.log('[Sync Debug] Recovered selected artists:', selectedArtists);
+
+                    // 3. Collect recommendations
+                    const lastRecommendations = localStorage.getItem('last_recommendations');
+                    let recommendations = [];
+                    if (lastRecommendations) {
+                        try {
+                            recommendations = JSON.parse(lastRecommendations);
+                        } catch (e) {
+                            console.error('[Sync Debug] Error parsing recommendations:', e);
+                        }
+                    }
+
+                    // Create/get user in database with guest data
                     try {
+                        const payload = {
+                            lastfm_username: data.username,
+                            album_statuses_count: Object.keys(albumStatuses).length,
+                            selected_artists_count: selectedArtists.length,
+                            selected_artists_data: selectedArtists
+                        };
+
+                        // Only include non-empty data
+                        if (Object.keys(albumStatuses).length > 0) {
+                            payload.album_statuses = albumStatuses;
+                        }
+                        if (selectedArtists.length > 0) {
+                            payload.selected_artists = selectedArtists;
+                        }
+                        if (recommendations.length > 0) {
+                            payload.recommendations = recommendations;
+                        }
+
+                        console.log('[Sync Debug] Sending login request with data:', payload);
+
                         const authRes = await fetch('/auth/lastfm', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ lastfm_username: data.username })
+                            body: JSON.stringify(payload)
                         });
                         const authData = await authRes.json();
                         if (authData.user_id) {
@@ -136,10 +199,10 @@
 
                     showSuccess(data.username);
 
-                    // Redirect back to main app after 1 second
+                    // Redirect back to main app after 2 seconds (give backend time to fetch Last.fm data)
                     setTimeout(() => {
                         window.location.href = '/';
-                    }, 1000);
+                    }, 2000);
                 } else {
                     showError('No se pudo autenticar con Last.fm. Por favor, intenta de nuevo.');
                 }

@@ -3,6 +3,7 @@ console.log('app-user-ext.js loaded');
 
 // Album status tracking
 const albumStatuses = new Map(); // key: "artist|album", value: "favorite"|"owned"|"disliked"
+window.albumStatuses = albumStatuses; // Expose to other scripts
 
 // Load album statuses from localStorage
 function loadAlbumStatuses() {
@@ -11,10 +12,23 @@ function loadAlbumStatuses() {
 }
 
 // Save album statuses to localStorage and DB
+// Save album statuses to localStorage and DB
 async function saveAlbumStatuses() {
-    // localStorage saving removed
-    // const data = Object.fromEntries(albumStatuses);
-    // localStorage.setItem('album_statuses', JSON.stringify(data));
+    // Save to localStorage for guest persistence (using individual keys for callback.html compatibility)
+    // First clear old keys to avoid stale data
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('album_status_')) {
+            localStorage.removeItem(key);
+        }
+    }
+
+    // Save current statuses
+    albumStatuses.forEach((status, key) => {
+        // key is "artist|album", convert to "artist::album" for storage safety
+        const storageKey = `album_status_${key.replace('|', '::')}`;
+        localStorage.setItem(storageKey, status);
+    });
 
     // Also save to database if user is logged in
     const userId = localStorage.getItem('userId');
@@ -66,7 +80,10 @@ window.setAlbumStatus = async function (artist, album, status, recId = null, ski
 
 // Get album status
 window.getAlbumStatus = function (artist, album) {
-    return albumStatuses.get(getAlbumKey(artist, album));
+    const key = getAlbumKey(artist, album);
+    const status = albumStatuses.get(key);
+    console.log(`[DEBUG getAlbumStatus] artist="${artist}", album="${album}", key="${key}", status="${status}"`);
+    return status;
 }
 
 // Load and display profile sidebar
@@ -87,15 +104,39 @@ window.loadProfileSidebar = async function () {
             const res = await fetch(`/api/users/${userId}/profile/lastfm`);
             if (res.ok) {
                 const profile = await res.json();
-                if (profile.top_artists && profile.top_artists.length > 0) {
+                console.log('[DEBUG] Last.fm profile response:', profile);
+
+                let artists = profile.top_artists || [];
+
+                // Robust handling for data structure
+                if (!Array.isArray(artists)) {
+                    console.warn('[DEBUG] top_artists is not an array, attempting to extract...', typeof artists);
+                    if (artists.artist && Array.isArray(artists.artist)) {
+                        artists = artists.artist;
+                    } else if (artists.artists && Array.isArray(artists.artists)) {
+                        artists = artists.artists;
+                    } else {
+                        // Fallback: try to convert object values if it looks like a list-as-object
+                        const values = Object.values(artists);
+                        if (values.length > 0 && (values[0].name || values[0].artist_name)) {
+                            artists = values;
+                        }
+                    }
+                }
+
+                console.log(`Loaded ${artists ? artists.length : 0} Last.fm top artists for sidebar`);
+
+                if (artists && artists.length > 0) {
                     const list = document.getElementById('lastfm-artists-list');
                     list.innerHTML = '';
 
-                    profile.top_artists.slice(0, 10).forEach(artist => {
+                    artists.slice(0, 10).forEach(artist => {
                         const li = document.createElement('li');
+                        const name = typeof artist === 'string' ? artist : artist.name;
+                        const playcount = artist.playcount || 0;
                         li.innerHTML = `
-                            <span>${artist.name}</span>
-                            <span class="artist-playcount">${artist.playcount || 0} plays</span>
+                            <span>${name}</span>
+                            <span class="artist-playcount">${playcount} plays</span>
                         `;
                         list.appendChild(li);
                     });
@@ -115,12 +156,13 @@ window.loadProfileSidebar = async function () {
     }
 
     // Load selected artists
-    // Load selected artists
     if (userId) {
         try {
+            console.log('[DEBUG] Fetching selected artists for sidebar...');
             const res = await fetch(`/api/users/${userId}/selected-artists`);
             if (res.ok) {
                 const artists = await res.json();
+                console.log('[DEBUG] Selected artists response:', artists);
                 if (artists.length > 0) {
                     const list = document.getElementById('selected-artists-list');
                     list.innerHTML = '';
@@ -133,7 +175,11 @@ window.loadProfileSidebar = async function () {
 
                     selectedSection.style.display = 'block';
                     hasContent = true;
+                } else {
+                    console.log('[DEBUG] No selected artists found');
                 }
+            } else {
+                console.error('[DEBUG] Failed to fetch selected artists:', res.status);
             }
         } catch (e) {
             console.error('Error loading selected artists:', e);

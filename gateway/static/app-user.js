@@ -381,16 +381,22 @@ function getRecArtistAndAlbum(rec) {
 
 function syncAlbumStatusesFromRecs(recommendations) {
     // Clear current map
-    albumStatuses.clear();
-    recommendations.forEach(rec => {
-        const { artist, album } = getRecArtistAndAlbum(rec);
-        // Sync all statuses from DB: neutral, favorite, owned, disliked
-        if (rec.status) {
-            const key = `${artist}|${album}`;
-            // Map 'neutral' to null for the frontend (no special status)
-            albumStatuses.set(key, rec.status === 'neutral' ? null : rec.status);
-        }
-    });
+    if (typeof albumStatuses !== 'undefined') {
+        albumStatuses.clear();
+        recommendations.forEach(rec => {
+            const { artist, album } = getRecArtistAndAlbum(rec);
+            // Sync all statuses from DB: neutral, favorite, owned, disliked
+            if (rec.status) {
+                const key = `${artist}|${album}`;
+                // Map 'neutral' to null for the frontend (no special status)
+                albumStatuses.set(key, rec.status === 'neutral' ? null : rec.status);
+            }
+        });
+        console.log('[DEBUG] Synced album statuses. Map size:', albumStatuses.size);
+        console.log('[DEBUG] Sample status keys:', Array.from(albumStatuses.keys()).slice(0, 3));
+    } else {
+        console.error('[DEBUG] albumStatuses is undefined in syncAlbumStatusesFromRecs!');
+    }
 }
 
 
@@ -949,6 +955,9 @@ function createAlbumCard(rec) {
     let currentStatus = null;
     if (typeof window.getAlbumStatus === 'function') {
         currentStatus = window.getAlbumStatus(artist, album);
+        console.log(`[DEBUG createAlbumCard] artist="${artist}", album="${album}", currentStatus="${currentStatus}"`);
+    } else {
+        console.error('[DEBUG createAlbumCard] window.getAlbumStatus is not a function!');
     }
 
     card.innerHTML = `
@@ -1312,8 +1321,8 @@ async function handleArtistSelection(selectedArtists, searchComponent) {
     }
 
     const artistNames = selectedArtists.map(a => a.name);
-    // localStorage caching for artists removed
-    // localStorage.setItem('selected_artist_names', JSON.stringify(artistNames));
+    // localStorage caching for artists restored for guest sync
+    localStorage.setItem('selected_artist_names', JSON.stringify(artistNames));
 
 
     if (!component) {

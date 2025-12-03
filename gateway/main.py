@@ -12,6 +12,7 @@ import time
 import csv
 import json
 from typing import AsyncGenerator, Optional, List, Dict, Any
+from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -151,6 +152,9 @@ class GoogleLoginRequest(BaseModel):
 
 class LastFmLoginRequest(BaseModel):
     lastfm_username: str = Field(..., description="Last.fm username for login")
+    selected_artists: Optional[List[str]] = Field(default=None, description="Guest selected artists to sync")
+    album_statuses: Optional[Dict[str, str]] = Field(default=None, description="Guest album statuses to sync")
+    recommendations: Optional[List[Dict[str, Any]]] = Field(default=None, description="Guest recommendations to sync")
 
 class LinkLastFmRequest(BaseModel):
     user_id: int = Field(..., description="Existing user ID to link Last.fm identity to")
@@ -172,9 +176,105 @@ async def google_login(request: GoogleLoginRequest):
 
 @app.post("/auth/lastfm")
 async def lastfm_login_endpoint(request: LastFmLoginRequest):
-    """Create or retrieve a user via Last.fm username."""
+    """Create or retrieve a user via Last.fm username and sync guest data."""
     try:
         user_id = db.get_or_create_user_via_lastfm(request.lastfm_username)
+        
+        # Sync guest data if provided
+        # DEBUG: Write to file for debugging
+        with open("/tmp/vinylbe_sync_debug.log", "a") as f:
+            f.write(f"[{datetime.now()}] Endpoint called. selected_artists: {request.selected_artists}\n")
+        
+        if request.selected_artists:
+            log_event("gateway", "INFO", f"Syncing {len(request.selected_artists)} guest artists for user {user_id}")
+            print(f"[DEBUG] Syncing guest artists: {request.selected_artists}")
+            with open("/tmp/vinylbe_sync_debug.log", "a") as f:
+                f.write(f"[{datetime.now()}] Starting sync of {len(request.selected_artists)} artists\n")
+            for artist_name in request.selected_artists:
+                try:
+                    with open("/tmp/vinylbe_sync_debug.log", "a") as f:
+                        f.write(f"[{datetime.now()}] Processing artist: {artist_name}\n")
+                    
+                    # First, ensure the artist exists in the artists table (create partial record if needed)
+                    conn = db.get_connection()
+                    try:
+                        cur = conn.cursor()
+                        # Check if artist exists
+                        cur.execute("SELECT id FROM artists WHERE name = ?", (artist_name,))
+                        if not cur.fetchone():
+                            # Create partial artist record
+                            cur.execute(
+                                "INSERT INTO artists (name, is_partial) VALUES (?, 1)",
+                                (artist_name,)
+                            )
+                            conn.commit()
+                            print(f"[DEBUG] Created partial artist record for: {artist_name}")
+                            with open("/tmp/vinylbe_sync_debug.log", "a") as f:
+                                f.write(f"[{datetime.now()}] Created partial artist: {artist_name}\n")
+                    finally:
+                        conn.close()
+                    
+                    # Now add to user's selected artists
+                    with open("/tmp/vinylbe_sync_debug.log", "a") as f:
+                        f.write(f"[{datetime.now()}] Calling add_user_selected_artist for: {artist_name}\n")
+                    db.add_user_selected_artist(user_id, artist_name, source="manual")
+                    print(f"[DEBUG] Successfully added guest artist: {artist_name}")
+                    with open("/tmp/vinylbe_sync_debug.log", "a") as f:
+                        f.write(f"[{datetime.now()}] Successfully added: {artist_name}\n")
+                except Exception as e:
+                    log_event("gateway", "WARNING", f"Failed to sync guest artist {artist_name}: {e}")
+                    print(f"[DEBUG] Failed to add guest artist {artist_name}: {e}")
+                    with open("/tmp/vinylbe_sync_debug.log", "a") as f:
+                        f.write(f"[{datetime.now()}] ERROR for {artist_name}: {str(e)}\n")
+                    
+        if request.album_statuses:
+            log_event("gateway", "INFO", f"Syncing {len(request.album_statuses)} guest album statuses for user {user_id}")
+            with open("/tmp/vinylbe_sync_debug.log", "a") as f:
+                f.write(f"[{datetime.now()}] Syncing {len(request.album_statuses)} album statuses: {request.album_statuses}\n")
+            
+            for key, status in request.album_statuses.items():
+                try:
+                    # Key format: "artist|album"
+                    parts = key.split("|")
+                    if len(parts) >= 2:
+                        artist = parts[0]
+                        album = parts[1]
+                        db.upsert_recommendation_status(user_id, artist, album, status)
+                        with open("/tmp/vinylbe_sync_debug.log", "a") as f:
+                            f.write(f"[{datetime.now()}] Upserted status for {artist}|{album}: {status}\n")
+                except Exception as e:
+                    log_event("gateway", "WARNING", f"Failed to sync album status {key}: {e}")
+                    with open("/tmp/vinylbe_sync_debug.log", "a") as f:
+                        f.write(f"[{datetime.now()}] ERROR syncing status {key}: {e}\n")
+        else:
+            with open("/tmp/vinylbe_sync_debug.log", "a") as f:
+                f.write(f"[{datetime.now()}] No album_statuses in request\n")
+        
+        # Sync guest recommendations if provided
+        if request.recommendations:
+            try:
+                db.regenerate_recommendations(user_id, request.recommendations)
+                log_event("gateway", "INFO", f"Synced {len(request.recommendations)} guest recommendations for user {user_id}")
+            except Exception as e:
+                log_event("gateway", "WARNING", f"Failed to sync guest recommendations: {e}")
+
+        # Fetch and save Last.fm profile (Top Artists)
+        try:
+            if http_client:
+                log_event("gateway", "INFO", f"Fetching Last.fm profile for {request.lastfm_username}")
+                resp = await http_client.post(
+                    f"{LASTFM_SERVICE_URL}/top-artists",
+                    json={"username": request.lastfm_username, "limit": 50}
+                )
+                if resp.status_code == 200:
+                    top_artists = resp.json()
+                    db.upsert_user_profile_lastfm(user_id, request.lastfm_username, top_artists)
+                    log_event("gateway", "INFO", f"Saved Last.fm profile for {request.lastfm_username}")
+                else:
+                    log_event("gateway", "WARNING", f"Failed to fetch Last.fm profile: {resp.status_code}")
+        except Exception as e:
+            log_event("gateway", "WARNING", f"Error fetching Last.fm profile: {e}")
+
         return {"user_id": user_id}
     except Exception as e:
         log_event("gateway", "ERROR", f"Last.fm login failed: {str(e)}")
