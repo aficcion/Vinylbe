@@ -162,6 +162,32 @@
                         }
                     }
 
+                    // 4. Collect manually added albums
+                    const manuallyAddedAlbums = [];
+                    const guestUserId = localStorage.getItem('userId');
+                    console.log('[Sync Debug] Guest userId:', guestUserId);
+
+                    if (guestUserId && guestUserId !== 'null' && guestUserId !== 'undefined') {
+                        try {
+                            console.log('[Sync Debug] Fetching manually added albums for guest user:', guestUserId);
+                            const albumsResp = await fetch(`/api/users/${guestUserId}/recommendations`);
+                            if (albumsResp.ok) {
+                                const allRecs = await albumsResp.json();
+                                console.log('[Sync Debug] All recommendations:', allRecs);
+                                // Filter only manual albums
+                                const manualAlbums = allRecs.filter(rec => rec.source === 'manual');
+                                console.log('[Sync Debug] Manual albums found:', manualAlbums);
+                                manuallyAddedAlbums.push(...manualAlbums);
+                            } else {
+                                console.warn('[Sync Debug] Failed to fetch recommendations:', albumsResp.status);
+                            }
+                        } catch (e) {
+                            console.error('[Sync Debug] Error fetching manual albums:', e);
+                        }
+                    } else {
+                        console.log('[Sync Debug] No guest userId found, skipping manual albums fetch');
+                    }
+
                     // Create/get user in database with guest data
                     try {
                         const payload = {
@@ -180,6 +206,10 @@
                         }
                         if (recommendations.length > 0) {
                             payload.recommendations = recommendations;
+                        }
+                        if (manuallyAddedAlbums.length > 0) {
+                            payload.manually_added_albums = manuallyAddedAlbums;
+                            console.log('[Sync Debug] Including manually added albums:', manuallyAddedAlbums);
                         }
 
                         console.log('[Sync Debug] Sending login request with data:', payload);

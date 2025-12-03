@@ -155,6 +155,7 @@ class LastFmLoginRequest(BaseModel):
     selected_artists: Optional[List[str]] = Field(default=None, description="Guest selected artists to sync")
     album_statuses: Optional[Dict[str, str]] = Field(default=None, description="Guest album statuses to sync")
     recommendations: Optional[List[Dict[str, Any]]] = Field(default=None, description="Guest recommendations to sync")
+    manually_added_albums: Optional[List[Dict[str, Any]]] = Field(default=None, description="Guest manually added albums to sync")
 
 class LinkLastFmRequest(BaseModel):
     user_id: int = Field(..., description="Existing user ID to link Last.fm identity to")
@@ -282,6 +283,44 @@ async def lastfm_login_endpoint(request: LastFmLoginRequest):
                 log_event("gateway", "INFO", f"Synced {len(request.recommendations)} guest recommendations for user {user_id}")
             except Exception as e:
                 log_event("gateway", "WARNING", f"Failed to sync guest recommendations: {e}")
+
+        # Sync manually added albums if provided
+        if request.manually_added_albums:
+            log_event("gateway", "INFO", f"Syncing {len(request.manually_added_albums)} manually added albums for user {user_id}")
+            for album in request.manually_added_albums:
+                try:
+                    artist_name = album.get('artist_name')
+                    album_title = album.get('album_title') or album.get('album_name')
+                    
+                    if not artist_name or not album_title:
+                        log_event("gateway", "WARNING", f"Skipping album with missing data: {album}")
+                        continue
+                    
+                    # Check if recommendation already exists
+                    conn = db.get_connection()
+                    try:
+                        cur = conn.cursor()
+                        cur.execute(
+                            "SELECT id, status, source FROM recommendation WHERE user_id = ? AND artist_name = ? AND album_title = ? COLLATE NOCASE",
+                            (user_id, artist_name, album_title)
+                        )
+                        existing = cur.fetchone()
+                        
+                        if not existing:
+                            # Add new manual recommendation
+                            cur.execute(
+                                "INSERT INTO recommendation (user_id, artist_name, album_title, source, status) VALUES (?, ?, ?, 'manual', 'neutral')",
+                                (user_id, artist_name, album_title)
+                            )
+                            conn.commit()
+                            log_event("gateway", "INFO", f"Added manual album: {artist_name} - {album_title}")
+                        else:
+                            # Album exists - Last.fm status takes precedence, don't overwrite
+                            log_event("gateway", "INFO", f"Album already exists (source: {existing['source']}, status: {existing['status']}), preserving Last.fm data: {artist_name} - {album_title}")
+                    finally:
+                        conn.close()
+                except Exception as e:
+                    log_event("gateway", "WARNING", f"Failed to sync manual album {artist_name} - {album_title}: {e}")
 
         # Fetch and save Last.fm profile (Top Artists)
         try:

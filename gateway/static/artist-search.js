@@ -67,6 +67,7 @@ class ArtistSearch {
     removeAlbum(index) {
         this.selectedAlbums.splice(index, 1);
         this.renderSelectedAlbums();
+        this.updateContinueButton();
         // Re-render search results to update button states
         this.renderSearchResults();
     }
@@ -380,6 +381,7 @@ class ArtistSearch {
 
                 // Render the selected albums pills
                 this.renderSelectedAlbums();
+                this.updateContinueButton();
             } else {
                 const error = await response.json();
                 console.error('Failed to add album:', error);
@@ -588,7 +590,8 @@ class ArtistSearch {
     }
 
     isValidSelection() {
-        return this.selectedArtists.length >= this.options.minArtists &&
+        const totalCount = this.selectedArtists.length + this.selectedAlbums.length;
+        return totalCount >= this.options.minArtists &&
             this.selectedArtists.length <= this.options.maxArtists;
     }
 

@@ -572,3 +572,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+@media (max-width: 768px) {
+
+    /* Limit search results to 10 items on mobile */
+    .artist-search-modal .artist-grid .artist-card:nth-child(n+11),
+    .artist-search-modal .album-grid .album-card:nth-child(n+11) {
+        display: none;
+    }
+}

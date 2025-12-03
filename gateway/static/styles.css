@@ -458,3 +458,58 @@ tr:hover td {
     width: 100%;
     max-width: 400px;
 }
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+    .mosaic-container {
+        display: none;
+    }
+
+    .container {
+        padding: 1rem;
+    }
+
+    header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    nav {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        overflow-x: auto;
+        padding-bottom: 0.5rem;
+    }
+
+    nav a {
+        margin-left: 0;
+        margin-right: 1.5rem;
+        white-space: nowrap;
+    }
+
+    h1 {
+        font-size: 1.75rem;
+    }
+
+    .card-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .modal-content {
+        height: 100%;
+        max-height: 100%;
+        border-radius: 0;
+        width: 100%;
+    }
+
+    .modal-overlay {
+        padding: 0;
+    }
+
+    .modal-close {
+        top: 1rem;
+        right: 1rem;
+    }
+}

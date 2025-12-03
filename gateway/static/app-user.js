@@ -1052,7 +1052,8 @@ function createAlbumCard(rec) {
 async function openAlbumDetail(rec) {
     let artist, album, cover;
 
-    if (rec.source === 'artist_based' || rec.source === 'lastfm' || rec.source === 'manual') {
+    // Check for direct properties first (used by DB-stored recs: manual, lastfm, mixed, etc.)
+    if (rec.artist_name || rec.album_name) {
         artist = rec.artist_name || 'Unknown Artist';
         album = rec.album_name || 'Unknown Album';
         cover = rec.cover_url || rec.image_url || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="300"%3E%3Crect fill="%23ddd" width="300" height="300"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="18" dy="10.5" font-weight="bold" x="50%25" y="50%25" text-anchor="middle"%3ENo Cover%3C/text%3E%3C/svg%3E';
@@ -1063,6 +1064,7 @@ async function openAlbumDetail(rec) {
         album = albumInfo.name || 'Unknown Album';
         cover = albumInfo.images?.[0]?.url || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="300"%3E%3Crect fill="%23ddd" width="300" height="300"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="18" dy="10.5" font-weight="bold" x="50%25" y="50%25" text-anchor="middle"%3ENo Cover%3C/text%3E%3C/svg%3E';
     }
+
 
     document.getElementById('recommendations-view').classList.remove('active');
     document.getElementById('album-detail-view').style.display = 'block';
@@ -1248,7 +1250,7 @@ async function openArtistSearch() {
 
     if (!artistSearchComponent) {
         artistSearchComponent = new ArtistSearch('artist-search-container', {
-            minArtists: 3,
+            minArtists: 1,
             maxArtists: 10,
             onContinue: handleArtistSelection
         });
@@ -1370,6 +1372,16 @@ async function handleArtistSelection(selectedArtists, searchComponent) {
         console.error('Artist search component not available');
         closeArtistSearch();
         alert('Error: el componente de búsqueda no está disponible. Por favor, intenta de nuevo.');
+        return;
+    }
+
+    // If no artists selected (only albums), skip recommendation generation
+    if (artistNames.length === 0) {
+        console.log('No artists selected, skipping recommendation generation');
+        closeArtistSearch();
+        if (userId) {
+            await fetchUserRecommendations(userId);
+        }
         return;
     }
 
