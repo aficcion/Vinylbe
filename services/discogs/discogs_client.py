@@ -14,6 +14,45 @@ class DiscogsClient:
         self.last_request_time = 0.0
         self.min_request_interval = 2.0
     
+    def _filter_and_normalize_tracklist(self, tracklist: List[Dict]) -> List[Dict]:
+        """
+        Filter out side markers and normalize track numbering.
+        
+        Discogs tracklists include entries like:
+        - Side markers: position="A", position="B" (no actual track)
+        - Actual tracks: position="A1", position="B2", etc.
+        
+        This function:
+        1. Filters out entries with empty or letter-only positions
+        2. Keeps only actual tracks with numeric or alphanumeric positions
+        3. Renumbers tracks sequentially (1, 2, 3, ...) for display
+        """
+        filtered_tracks = []
+        
+        for track in tracklist:
+            position = track.get("position", "").strip()
+            title = track.get("title", "").strip()
+            
+            # Skip entries with no position or no title
+            if not position or not title:
+                continue
+            
+            # Skip side markers (position is only letters like "A", "B", "C")
+            # But keep alphanumeric positions like "A1", "B2"
+            if position.isalpha():
+                continue
+            
+            # Keep this track
+            filtered_tracks.append({
+                "position": position,  # Keep original position for reference
+                "title": title,
+                "duration": track.get("duration", "")
+            })
+        
+        # Renumber tracks sequentially for display
+        # The frontend will use the array index for numbering
+        return filtered_tracks
+    
     async def start(self):
         headers = {"User-Agent": "VinylRecommender/1.0"}
         self.client = httpx.AsyncClient(timeout=30.0, headers=headers)
@@ -439,9 +478,13 @@ class DiscogsClient:
             
             tracklist = data.get("tracklist", [])
             
-            # Formatear el tracklist para devolver solo info relevante
+            # Format tracklist - keep all track entries, filter out headings
             formatted_tracklist = []
             for track in tracklist:
+                # Skip headings (section markers like "Album Sampler", "White Knuckle Ride")
+                if track.get("type_") == "heading":
+                    continue
+                    
                 formatted_tracklist.append({
                     "position": track.get("position", ""),
                     "title": track.get("title", ""),
@@ -491,9 +534,13 @@ class DiscogsClient:
             
             tracklist = data.get("tracklist", [])
             
-            # Formatear el tracklist igual que en master
+            # Format tracklist - keep all track entries, filter out headings
             formatted_tracklist = []
             for track in tracklist:
+                # Skip headings (section markers)
+                if track.get("type_") == "heading":
+                    continue
+                    
                 formatted_tracklist.append({
                     "position": track.get("position", ""),
                     "title": track.get("title", ""),

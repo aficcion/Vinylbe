@@ -53,6 +53,7 @@ if __name__ == "__main__":
         ("Recommender Service", [python_cmd, "-m", "uvicorn", "services.recommender.main:app", "--host", "0.0.0.0", "--port", "3002"]),
         ("Pricing Service", [python_cmd, "-m", "uvicorn", "services.pricing.main:app", "--host", "0.0.0.0", "--port", "3003"]),
         ("Last.fm Service", [python_cmd, "-m", "uvicorn", "services.lastfm.main:app", "--host", "0.0.0.0", "--port", "3004"]),
+        ("Spotify Service", [python_cmd, "-m", "uvicorn", "services.spotify.main:app", "--host", "0.0.0.0", "--port", "3005"]),
         ("API Gateway", [python_cmd, "-m", "uvicorn", "gateway.main:app", "--host", "0.0.0.0", "--port", gateway_port]),
     ]
     
@@ -63,7 +64,8 @@ if __name__ == "__main__":
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                universal_newlines=True
+                universal_newlines=True,
+                env=os.environ.copy()  # Pass environment variables to subprocess
             )
             processes.append(p)
             time.sleep(2)  # Dar tiempo a que arranque
@@ -85,6 +87,7 @@ if __name__ == "__main__":
     print(f"📍 Recommender Service: http://localhost:3002")
     print(f"📍 Pricing Service:     http://localhost:3003")
     print(f"📍 Last.fm Service:     http://localhost:3004")
+    print(f"📍 Spotify Service:     http://localhost:3005")
     print(f"📍 API Gateway:         http://localhost:{gateway_port}")
     print("="*60)
     print("\n💡 Press Ctrl+C to stop all services\n")

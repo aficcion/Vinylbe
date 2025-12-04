@@ -74,6 +74,41 @@
     padding-right: 12px;
 }
 
+/* Search Filter Tabs */
+.search-filter-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+    padding: 6px;
+    background: var(--card-background);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    width: fit-content;
+}
+
+.search-tab {
+    padding: 8px 20px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.search-tab:hover {
+    background: var(--background);
+    color: var(--text);
+}
+
+.search-tab.active {
+    background: var(--primary);
+    color: white;
+}
+
 .search-results-label {
     font-size: 14px;
     font-weight: 500;
@@ -233,6 +268,70 @@
     color: var(--text-secondary);
 }
 
+.selected-artists-header .header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex: 1;
+    gap: 10px;
+}
+
+.selected-albums-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+}
+
+.selected-albums-header .header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex: 1;
+    gap: 10px;
+}
+
+/* Collapsible functionality */
+.collapsible-header {
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.2s ease;
+    padding: 8px;
+    margin: -8px;
+    border-radius: 8px;
+}
+
+.collapsible-header:hover {
+    background: var(--hover-color, rgba(0, 0, 0, 0.05));
+}
+
+.collapse-icon {
+    font-size: 12px;
+    transition: transform 0.3s ease;
+    color: var(--text-secondary);
+    display: none;
+    /* Hidden by default, shown on mobile */
+}
+
+.collapse-icon.collapsed {
+    transform: rotate(-90deg);
+}
+
+.collapsible-content {
+    max-height: 500px;
+    overflow: hidden;
+    transition: max-height 0.3s ease, opacity 0.3s ease;
+    opacity: 1;
+}
+
+.collapsible-content.collapsed {
+    max-height: 0;
+    opacity: 0;
+}
+
 .artist-counter {
     font-size: 13px;
     color: var(--text-secondary);
@@ -380,6 +479,31 @@
 
 .search-section-header:first-child {
     margin-top: 0;
+}
+
+/* Show More Button */
+.show-more-btn {
+    width: 100%;
+    padding: 12px;
+    margin-top: 12px;
+    background: var(--card-background);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.show-more-btn:hover {
+    background: var(--background);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.show-more-btn:active {
+    transform: scale(0.98);
 }
 
 /* Album Cards */
@@ -581,6 +705,11 @@
         max-width: 100%;
     }
 
+    /* Show collapse icons on mobile */
+    .collapse-icon {
+        display: block;
+    }
+
     /* Ensure all containers respect width */
     .artist-search-input-wrapper,
     .search-results-container,
@@ -588,12 +717,6 @@
     .artist-search-modal .album-grid {
         width: 100%;
         max-width: 100%;
-    }
-
-    /* Limit search results to 5 items on mobile */
-    .artist-search-modal .artist-grid .artist-card:nth-child(n+6),
-    .artist-search-modal .album-grid .album-card:nth-child(n+6) {
-        display: none;
     }
 
     /* Force 1 column layout on mobile */
@@ -648,5 +771,11 @@
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         line-height: 1.3;
+    }
+
+    /* Collapsible sections behavior on mobile */
+    .collapsible-content.collapsed {
+        max-height: 0 !important;
+        opacity: 0 !important;
     }
 }

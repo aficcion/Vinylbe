@@ -17,6 +17,9 @@ class ArtistSearch {
         this.recommendationsCache = {};
         this.loadingArtists = new Set();
         this.pendingPromises = new Map();
+        this.currentSearchFilter = 'all'; // 'all', 'artists', 'albums'
+        this.showAllArtists = false; // Mobile: show all artists or just 2
+        this.showAllAlbums = false; // Mobile: show all albums or just 2
 
         this.render();
         this.attachEventListeners();
@@ -91,24 +94,34 @@ class ArtistSearch {
                 </div>
                 
                 <div id="search-results-container" class="search-results-container">
-                    <div class="search-results-label">Resultados de búsqueda</div>
+                    <div class="search-filter-tabs" id="search-filter-tabs" style="display: none;">
+                        <button class="search-tab active" data-filter="all">Todos</button>
+                        <button class="search-tab" data-filter="artists">Artistas</button>
+                        <button class="search-tab" data-filter="albums">Álbumes</button>
+                    </div>
                     <div id="search-results-grid" class="artist-grid"></div>
                 </div>
                 
                 <div class="selected-artists-section">
-                    <div class="selected-artists-header">
-                        <span>Artistas seleccionados (opcional, máx. ${this.options.maxArtists})</span>
-                        <span id="artist-counter" class="artist-counter">0/${this.options.maxArtists} seleccionados</span>
+                    <div class="selected-artists-header collapsible-header" id="artists-header">
+                        <div class="header-content">
+                            <span>Artistas seleccionados (opcional, máx. ${this.options.maxArtists})</span>
+                            <span id="artist-counter" class="artist-counter">0/${this.options.maxArtists} seleccionados</span>
+                        </div>
+                        <span class="collapse-icon">▼</span>
                     </div>
-                    <div id="selected-artists-pills" class="selected-artists-pills"></div>
+                    <div id="selected-artists-pills" class="selected-artists-pills collapsible-content"></div>
                 </div>
 
                 <div class="selected-albums-section">
-                    <div class="selected-albums-header">
-                        <span>Álbumes añadidos</span>
-                        <span id="album-counter" class="album-counter">0 añadidos</span>
+                    <div class="selected-albums-header collapsible-header" id="albums-header">
+                        <div class="header-content">
+                            <span>Álbumes añadidos</span>
+                            <span id="album-counter" class="album-counter">0 añadidos</span>
+                        </div>
+                        <span class="collapse-icon">▼</span>
                     </div>
-                    <div id="selected-albums-pills" class="selected-albums-pills"></div>
+                    <div id="selected-albums-pills" class="selected-albums-pills collapsible-content"></div>
                 </div>
                 
                 ${this.options.onContinue ? `
@@ -162,6 +175,67 @@ class ArtistSearch {
                 }
             });
         }
+
+        // Attach filter tab listeners
+        this.attachFilterTabListeners();
+
+        // Attach collapsible listeners
+        this.attachCollapsibleListeners();
+    }
+
+    attachCollapsibleListeners() {
+        const artistsHeader = document.getElementById('artists-header');
+        const albumsHeader = document.getElementById('albums-header');
+
+        // Initialize as collapsed on mobile
+        if (window.innerWidth <= 768) {
+            const artistsContent = document.getElementById('selected-artists-pills');
+            const albumsContent = document.getElementById('selected-albums-pills');
+
+            if (artistsContent) artistsContent.classList.add('collapsed');
+            if (albumsContent) albumsContent.classList.add('collapsed');
+
+            const artistIcon = artistsHeader?.querySelector('.collapse-icon');
+            const albumIcon = albumsHeader?.querySelector('.collapse-icon');
+
+            if (artistIcon) artistIcon.classList.add('collapsed');
+            if (albumIcon) albumIcon.classList.add('collapsed');
+        }
+
+        if (artistsHeader) {
+            artistsHeader.addEventListener('click', () => {
+                const content = document.getElementById('selected-artists-pills');
+                const icon = artistsHeader.querySelector('.collapse-icon');
+
+                content.classList.toggle('collapsed');
+                icon.classList.toggle('collapsed');
+            });
+        }
+
+        if (albumsHeader) {
+            albumsHeader.addEventListener('click', () => {
+                const content = document.getElementById('selected-albums-pills');
+                const icon = albumsHeader.querySelector('.collapse-icon');
+
+                content.classList.toggle('collapsed');
+                icon.classList.toggle('collapsed');
+            });
+        }
+    }
+
+    attachFilterTabListeners() {
+        const tabs = document.querySelectorAll('.search-tab');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Update active state
+                tabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+
+                // Update filter and re-render
+                this.currentSearchFilter = tab.dataset.filter;
+                this.renderSearchResults();
+            });
+        });
     }
 
     async performSearch(query) {
@@ -183,19 +257,35 @@ class ArtistSearch {
 
     renderSearchResults() {
         const resultsGrid = document.getElementById('search-results-grid');
+        const filterTabs = document.getElementById('search-filter-tabs');
 
         if (this.searchResults.length === 0 && (!this.albumResults || this.albumResults.length === 0)) {
             resultsGrid.innerHTML = '<div class="no-results">No se encontraron resultados</div>';
+            if (filterTabs) filterTabs.style.display = 'none';
             return;
         }
 
+        // Show filter tabs when there are results
+        if (filterTabs) filterTabs.style.display = 'flex';
+
         let html = '';
+        const showArtists = this.currentSearchFilter === 'all' || this.currentSearchFilter === 'artists';
+        const showAlbums = this.currentSearchFilter === 'all' || this.currentSearchFilter === 'albums';
+        const isMobile = window.innerWidth <= 768;
 
         // Render Artists Section
-        if (this.searchResults.length > 0) {
-            html += '<div class="search-section-header">Artistas</div>';
+        if (showArtists && this.searchResults.length > 0) {
+            if (this.currentSearchFilter === 'all') {
+                html += '<div class="search-section-header">Artistas</div>';
+            }
+
+            // Determine how many artists to show
+            const artistsToShow = (isMobile && !this.showAllArtists)
+                ? this.searchResults.slice(0, 2)
+                : this.searchResults;
+
             html += '<div class="artist-grid">';
-            html += this.searchResults.map(artist => {
+            html += artistsToShow.map(artist => {
                 const isSelected = this.selectedArtists.some(a => a.name === artist.name);
                 const isDisabled = !isSelected && this.selectedArtists.length >= this.options.maxArtists;
 
@@ -226,13 +316,30 @@ class ArtistSearch {
                 `;
             }).join('');
             html += '</div>'; // Close artist-grid
+
+            // Add "Show More" button for mobile if there are more than 2 artists
+            if (isMobile && this.searchResults.length > 2) {
+                html += `
+                    <button class="show-more-btn" id="show-more-artists">
+                        ${this.showAllArtists ? 'Ver menos' : `Ver más (${this.searchResults.length - 2} más)`}
+                    </button>
+                `;
+            }
         }
 
         // Render Albums Section
-        if (this.albumResults && this.albumResults.length > 0) {
-            html += '<div class="search-section-header">Álbumes</div>';
+        if (showAlbums && this.albumResults && this.albumResults.length > 0) {
+            if (this.currentSearchFilter === 'all') {
+                html += '<div class="search-section-header">Álbumes</div>';
+            }
+
+            // Determine how many albums to show
+            const albumsToShow = (isMobile && !this.showAllAlbums)
+                ? this.albumResults.slice(0, 2)
+                : this.albumResults;
+
             html += '<div class="album-grid">';
-            html += this.albumResults.map(album => {
+            html += albumsToShow.map(album => {
                 // HTML-escape the JSON to prevent attribute breaking
                 const albumDataEscaped = JSON.stringify(album)
                     .replace(/&/g, '&amp;')
@@ -262,11 +369,40 @@ class ArtistSearch {
                 `;
             }).join('');
             html += '</div>'; // Close album-grid
+
+            // Add "Show More" button for mobile if there are more than 2 albums
+            if (isMobile && this.albumResults.length > 2) {
+                html += `
+                    <button class="show-more-btn" id="show-more-albums">
+                        ${this.showAllAlbums ? 'Ver menos' : `Ver más (${this.albumResults.length - 2} más)`}
+                    </button>
+                `;
+            }
         }
 
         resultsGrid.innerHTML = html;
         this.attachArtistCardListeners();
         this.attachAlbumCardListeners();
+        this.attachShowMoreListeners();
+    }
+
+    attachShowMoreListeners() {
+        const showMoreArtistsBtn = document.getElementById('show-more-artists');
+        const showMoreAlbumsBtn = document.getElementById('show-more-albums');
+
+        if (showMoreArtistsBtn) {
+            showMoreArtistsBtn.addEventListener('click', () => {
+                this.showAllArtists = !this.showAllArtists;
+                this.renderSearchResults();
+            });
+        }
+
+        if (showMoreAlbumsBtn) {
+            showMoreAlbumsBtn.addEventListener('click', () => {
+                this.showAllAlbums = !this.showAllAlbums;
+                this.renderSearchResults();
+            });
+        }
     }
 
     attachArtistCardListeners() {
@@ -642,8 +778,21 @@ class ArtistSearch {
 
     clearSearchResults() {
         const resultsGrid = document.getElementById('search-results-grid');
+        const filterTabs = document.getElementById('search-filter-tabs');
         resultsGrid.innerHTML = '';
         this.searchResults = [];
+        this.albumResults = [];
+        this.currentSearchFilter = 'all';
+        this.showAllArtists = false;
+        this.showAllAlbums = false;
+        if (filterTabs) {
+            filterTabs.style.display = 'none';
+            // Reset tabs to 'all'
+            const tabs = filterTabs.querySelectorAll('.search-tab');
+            tabs.forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.filter === 'all');
+            });
+        }
     }
 
     getSelectedArtists() {

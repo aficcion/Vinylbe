@@ -1109,12 +1109,12 @@ function renderDetailPricing(pricing) {
 
     // Tracklist section
     if (pricing.tracklist && pricing.tracklist.length > 0) {
-        html += '<div class="tracklist-section"><h3>Lista de Canciones</h3><ol class="tracklist">';
+        html += '<div class="tracklist-section"><h3>Lista de Canciones</h3><ul class="tracklist">';
         pricing.tracklist.forEach(track => {
             const duration = track.duration ? ` <span class="duration">${track.duration}</span>` : '';
             html += `<li><span>${track.title}</span>${duration}</li>`;
         });
-        html += '</ol></div>';
+        html += '</ul></div>';
     } else if (pricing.discogs_type) {
         html += `<div class="info-message warning">⚠️ No se encontró tracklist en Discogs</div>`;
     }

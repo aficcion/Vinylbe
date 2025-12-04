@@ -27,8 +27,6 @@ CLIENT = httpx.Client(
     follow_redirects=True,
 )
 
-CACHE_EXPIRY_DAYS = 7
-
 _last_discogs_call_time = 0.0
 _MIN_DISCOGS_DELAY = 1.5
 _discogs_lock = threading.Lock()
@@ -127,8 +125,13 @@ def _get_db_connection():
         return None
 
 
-def _get_cached_artist_albums(artist_name: str) -> Optional[List[Dict[str, Any]]]:
-    """Get cached artist albums from SQLite"""
+def _get_cached_artist_albums(artist_name: str, ignore_expiry: bool = False) -> Optional[List[Dict[str, Any]]]:
+    """Get cached artist albums from SQLite
+    
+    Args:
+        artist_name: Name of the artist to search for
+        ignore_expiry: Deprecated parameter, kept for compatibility (cache never expires)
+    """
     conn = _get_db_connection()
     if not conn:
         return None
@@ -137,7 +140,7 @@ def _get_cached_artist_albums(artist_name: str) -> Optional[List[Dict[str, Any]]
         cursor = conn.cursor()
         
         cursor.execute(
-            "SELECT id, mbid, last_updated FROM artists WHERE name = ?",
+            "SELECT id, mbid, last_updated FROM artists WHERE LOWER(name) = LOWER(?)",
             (artist_name,)
         )
         artist = cursor.fetchone()
@@ -145,7 +148,7 @@ def _get_cached_artist_albums(artist_name: str) -> Optional[List[Dict[str, Any]]
         if not artist:
             return None
         
-        # Parse last_updated timestamp
+        # Parse last_updated timestamp for logging
         last_updated_str = artist["last_updated"]
         if isinstance(last_updated_str, str):
             last_updated = datetime.fromisoformat(last_updated_str)
@@ -153,9 +156,6 @@ def _get_cached_artist_albums(artist_name: str) -> Optional[List[Dict[str, Any]]
             last_updated = last_updated_str
         
         cache_age = datetime.now() - last_updated
-        if cache_age > timedelta(days=CACHE_EXPIRY_DAYS):
-            print(f"[DB] Cache for '{artist_name}' is {cache_age.days} days old (expired)")
-            return None
         
         cursor.execute(
             """SELECT title, year, discogs_master_id, discogs_release_id, 
@@ -170,7 +170,7 @@ def _get_cached_artist_albums(artist_name: str) -> Optional[List[Dict[str, Any]]
         if not albums:
             return None
         
-        print(f"[DB] ✓ Found {len(albums)} cached albums for '{artist_name}' (age: {cache_age.days}d)")
+        print(f"[DB] ✓ Found {len(albums)} cached albums for '{artist_name}' (age: {cache_age.days}d, never expires)")
         return [dict(album) for album in albums]
     
     except Exception as e:
@@ -203,7 +203,7 @@ def _save_artist_albums(artist_name: str, mbid: str, albums: List['StudioAlbum']
         )
         
         # Get artist_id
-        cursor.execute("SELECT id FROM artists WHERE name = ?", (artist_name,))
+        cursor.execute("SELECT id FROM artists WHERE LOWER(name) = LOWER(?)", (artist_name,))
         result = cursor.fetchone()
         if not result:
             return
@@ -503,7 +503,8 @@ def _discogs_master_data(master_id: str, key: str, secret: str, csv_mode: bool =
 
 def get_artist_studio_albums(artist_name: str, discogs_key: str, discogs_secret: str,
                               top_n: int = 3, csv_mode: bool = False, cache_only: bool = False) -> List[StudioAlbum]:
-    cached_albums = _get_cached_artist_albums(artist_name)
+    # When cache_only=True, ignore expiry to prevent unnecessary Discogs searches
+    cached_albums = _get_cached_artist_albums(artist_name, ignore_expiry=cache_only)
     if cached_albums:
         result = []
         for album_data in cached_albums[:top_n]:
