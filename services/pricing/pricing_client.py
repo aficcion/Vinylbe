@@ -32,6 +32,7 @@ class PricingClient:
     def __init__(self):
         self.client_id = os.getenv("EBAY_CLIENT_ID")
         self.client_secret = os.getenv("EBAY_CLIENT_SECRET")
+        self.zenrows_key = os.getenv("ZENROWS_API_KEY")
         
         if not self.client_id or not self.client_secret:
             raise RuntimeError(
@@ -221,7 +222,22 @@ class PricingClient:
         try:
             log_event("pricing-service", "INFO", f"Scraping Marilians for: {artist} - {album}")
             
-            response = await self.http_client.get(url, timeout=10.0, follow_redirects=True)
+            if self.zenrows_key:
+                # Use ZenRows proxy to avoid 403 blocks
+                zenrows_url = "https://api.zenrows.com/v1/"
+                params = {
+                    "apikey": self.zenrows_key,
+                    "url": url,
+                    "js_render": "true"
+                }
+                log_event("pricing-service", "DEBUG", "Using ZenRows proxy for Marilians")
+                # Increase timeout for proxy
+                response = await self.http_client.get(zenrows_url, params=params, timeout=30.0)
+            else:
+                # Direct request fallback
+                log_event("pricing-service", "WARNING", "No ZENROWS_API_KEY found, using direct connection (likely to be blocked)")
+                response = await self.http_client.get(url, timeout=10.0, follow_redirects=True)
+            
             response.raise_for_status()
             
             soup = BeautifulSoup(response.text, 'lxml')
@@ -336,8 +352,23 @@ class PricingClient:
             # Bajo el Volcán uses <li class="item"> for products
             products = soup.find_all('li', class_='item')
             
+            
             if not products:
-                log_event("pricing-service", "WARNING", "No products found in Bajo el Volcán results")
+                log_event("pricing-service", "INFO", "No products found with strict search. Trying fallback (Artist only)...")
+                
+                # Fallback: search just by artist
+                # This helps when album title has typos (e.g. "What Ever" vs "Whatever")
+                fallback_query = artist.replace(" ", "+")
+                fallback_url = f"https://www.bajoelvolcan.es/busqueda/listaLibros.php?tipoBus=full&palabrasBusqueda={fallback_query}"
+                
+                response_fallback = await self.http_client.get(fallback_url, timeout=10.0, follow_redirects=True)
+                if response_fallback.status_code == 200:
+                    soup_fallback = BeautifulSoup(response_fallback.text, 'lxml')
+                    products = soup_fallback.find_all('li', class_='item')
+                    log_event("pricing-service", "INFO", f"Fallback search found {len(products)} products")
+
+            if not products:
+                log_event("pricing-service", "WARNING", "No products found in Bajo el Volcán results (after fallback)")
                 return None
             
             best_match = None
