@@ -947,7 +947,7 @@ function createAlbumCard(rec) {
 
     // Handle cover images
     // Check for various image properties and ensure it's not an empty string
-    cover = rec.cover_url || rec.image_url || rec.image;
+    let cover = rec.cover_url || rec.image_url || rec.image;
 
     // If cover is missing or is a generic Last.fm placeholder (often empty or just a star), use our SVG
     if (!cover || cover.includes('2a96cbd8b46e442fc41c2b86b821562f')) {
@@ -1098,97 +1098,226 @@ function backToRecommendations() {
 function renderDetailPricing(pricing) {
     let html = '';
 
-
-    // Discogs information section
-    if (pricing.discogs_type) {
-        const typeLabel = pricing.discogs_type === 'master' ? 'Master' : 'Release';
-        html += `<div class="info-message">ℹ️ Encontrado en Discogs como ${typeLabel}</div>`;
-    } else if (pricing.discogs_url === null && pricing.discogs_id === null) {
-        html += `<div class="info-message warning">⚠️ No se encontró este álbum en Discogs</div>`;
-    }
-
-    // Tracklist section
-    if (pricing.tracklist && pricing.tracklist.length > 0) {
-        html += '<div class="tracklist-section"><h3>Lista de Canciones</h3><ul class="tracklist">';
-        pricing.tracklist.forEach(track => {
-            const duration = track.duration ? ` <span class="duration">${track.duration}</span>` : '';
-            html += `<li><span>${track.title}</span>${duration}</li>`;
-        });
-        html += '</ul></div>';
-    } else if (pricing.discogs_type) {
-        html += `<div class="info-message warning">⚠️ No se encontró tracklist en Discogs</div>`;
-    }
-
-    // eBay price section
-    if (pricing.ebay_offer) {
-        const url = pricing.ebay_offer.url || '#';
-        const totalPrice = pricing.ebay_offer.total_price || 'N/A';
-
+    // 1. Spotify link
+    if (pricing.spotify_id) {
         html += `
-            <div class="price-highlight">
-                <div class="price-label">Mejor precio eBay (EU)</div>
-                <div class="price-value">${totalPrice} EUR</div>
-                <a href="${url}" target="_blank" class="btn-primary">
-                    🛒 Comprar en eBay
-                </a>
-            </div>
-        `;
-    } else {
-        html += `<div class="info-message">ℹ️ No hay ofertas de eBay disponibles en este momento</div>`;
-    }
-
-    // Discogs marketplace link
-    if (pricing.discogs_sell_url) {
-        html += `
-            <a href="${pricing.discogs_sell_url}" target="_blank" class="btn-secondary">
-                🎵 Ver marketplace en Discogs
+            <a href="https://open.spotify.com/album/${pricing.spotify_id}" target="_blank" class="btn-spotify">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+                    <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
+                </svg>
+                PLAY ON SPOTIFY
             </a>
         `;
     }
 
-    // Discogs detail link
-    if (pricing.discogs_url) {
-        html += `
-            <a href="${pricing.discogs_url}" target="_blank" class="btn-secondary">
-                📖 Ver detalles en Discogs
-            </a>
-        `;
-    }
+    // 2. UNIFIED PRICE LIST (Local Stores + eBay)
+    let priceItems = [];
 
-    // Local stores section
+    // Add Local Stores
     if (pricing.local_stores && typeof pricing.local_stores === 'object') {
-        const storeNames = {
+        const storeLogos = {
+            'marilians': '/static/img/marilians_logo.png',
+            'bajo_el_volcan': '/static/img/bajo_el_volcan_logo.png',
+            'bora_bora': '/static/img/bora_bora_logo.png',
+            'revolver': null // Pending logo
+        };
+        const storeNiceNames = {
             'marilians': 'Marilians',
             'bajo_el_volcan': 'Bajo el Volcán',
             'bora_bora': 'Bora Bora',
             'revolver': 'Revolver Records'
         };
 
-        const storeEntries = Object.entries(pricing.local_stores);
-        if (storeEntries.length > 0) {
-            html += '<div class="stores-section"><h3>Tiendas Locales en Madrid</h3>';
-            storeEntries.forEach(([key, url]) => {
-                const name = storeNames[key] || key;
-                html += `
-                    <a href="${url}" target="_blank" class="store-link">
-                        🏪 ${name}
-                    </a>
-                `;
-            });
-            html += '</div>';
-        }
+        Object.entries(pricing.local_stores).forEach(([key, data]) => {
+            if (typeof data === 'object' && data !== null && data.price !== null) {
+                priceItems.push({
+                    type: 'local',
+                    name: storeNiceNames[key] || key,
+                    logo: storeLogos[key],
+                    price: data.price,
+                    url: data.url,
+                    sortPrice: data.price
+                });
+            }
+        });
     }
+
+    // Add eBay
+    if (pricing.ebay_offer) {
+        // Parse "35.00 EUR" -> 35.00
+        const priceStr = String(pricing.ebay_offer.total_price || '0');
+        const priceVal = parseFloat(priceStr.replace(/[^\d.]/g, ''));
+
+        priceItems.push({
+            type: 'ebay',
+            name: 'eBay',
+            logo: '/static/img/ebay_logo.png', // New uploaded logo
+            price: pricing.ebay_offer.total_price,
+            url: pricing.ebay_offer.url,
+            sortPrice: priceVal
+        });
+    }
+
+    // Sort by price (cheapest first)
+    priceItems.sort((a, b) => a.sortPrice - b.sortPrice);
+
+    if (priceItems.length > 0) {
+        html += '<div class="price-list-container"><h3>Comparativa de Precios</h3><div class="price-list">';
+
+        priceItems.forEach(item => {
+            const priceDisplay = typeof item.price === 'number' ? `${item.price.toFixed(2)} EUR` : item.price;
+
+            let logoHtml = '';
+            if (item.logo) {
+                logoHtml = `<img src="${item.logo}" alt="${item.name}" class="store-logo">`;
+            } else {
+                logoHtml = `<div class="store-logo-placeholder"><span>${item.name.substring(0, 2).toUpperCase()}</span></div>`;
+            }
+
+            // Entire card is now the anchor tag
+            html += `
+                <a href="${item.url}" target="_blank" class="price-item-link">
+                    <div class="price-item-logo">
+                        ${logoHtml}
+                    </div>
+                    <div class="price-item-info">
+                        <span class="store-name">${item.name}</span>
+                    </div>
+                    <div class="price-item-value">
+                        <span class="price-tag">${priceDisplay}</span>
+                        <svg class="chevron-right" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                    </div>
+                </a>
+            `;
+        });
+        html += '</div></div>';
+    } else {
+        html += `<div class="info-message">ℹ️ No hay precios disponibles actualmente</div>`;
+    }
+
+    // 3. Discogs marketplace link
+    if (pricing.discogs_sell_url) {
+        html += `
+            <a href="${pricing.discogs_sell_url}" target="_blank" class="btn-secondary btn-discogs-market">
+                🎵 Buscar en Discogs Marketplace
+            </a>
+        `;
+    }
+
+    // 4. Tracklist section (No scroll)
+    if (pricing.tracklist && pricing.tracklist.length > 0) {
+        html += '<div class="tracklist-section"><h3>Lista de Canciones</h3><ul class="tracklist no-scroll">';
+        pricing.tracklist.forEach(track => {
+            const duration = track.duration ? ` <span class="duration">${track.duration}</span>` : '';
+            html += `<li><span>${track.title}</span>${duration}</li>`;
+        });
+        html += '</ul></div>';
+    }
+
+    // 5. Discogs detail link
+    if (pricing.discogs_url) {
+        html += `
+            <a href="${pricing.discogs_url}" target="_blank" class="btn-secondary btn-discogs-release">
+                📖 Ver Ficha en Discogs
+            </a>
+        `;
+    }
+
+
+
+    // Trigger Lazy Load for FNAC (if not already present and if container/artist exists)
+    // DISABLED per user request
+    /*
+    if (pricing.artist && pricing.album && document.getElementById('detail-pricing')) {
+        setTimeout(() => {
+            fetchFnacPrice(pricing.artist, pricing.album);
+        }, 500); // Small delay to allow main render to finish
+    }
+    */
 
     return html;
 }
 
 // Fetch pricing for an album
 async function fetchPricing(artist, album) {
-    const response = await fetch(`/album-pricing/${encodeURIComponent(artist)}/${encodeURIComponent(album)}`);
+    // Note: This now calls the endpoint that excludes FNAC by default for speed
+    const response = await fetch(`/album-pricing?artist=${encodeURIComponent(artist)}&album=${encodeURIComponent(album)}`);
     if (!response.ok) {
         throw new Error('Failed to fetch pricing');
     }
     return await response.json();
+}
+
+// Lazy load FNAC pricing
+async function fetchFnacPrice(artist, album) {
+    console.log('Lazy loading FNAC price...');
+    try {
+        const response = await fetch(`/api/pricing/fnac?artist=${encodeURIComponent(artist)}&album=${encodeURIComponent(album)}`);
+        const data = await response.json();
+
+        if (data && data.fnac && data.fnac.price) {
+            console.log('FNAC price found:', data.fnac);
+
+            // Find the price list container
+            const priceList = document.querySelector('.price-list');
+
+            if (priceList) {
+                // Create FNAC item HTML
+                const fnacUrl = data.fnac.url;
+                const fnacPrice = typeof data.fnac.price === 'number' ? `${data.fnac.price.toFixed(2)} EUR` : data.fnac.price;
+
+                const fnacHtml = `
+                <a href="${fnacUrl}" target="_blank" class="price-item-link price-item-fnac-new" style="opacity: 0; transition: opacity 0.5s;">
+                    <div class="price-item-logo">
+                        <img src="/static/img/fnac_logo.png" alt="FNAC" class="store-logo">
+                    </div>
+                    <div class="price-item-info">
+                        <span class="store-name">FNAC</span>
+                        <span class="badge-new" style="font-size: 0.7em; background: #28a745; color: white; padding: 2px 5px; border-radius: 4px; margin-left: 5px;">Nuevo</span>
+                    </div>
+                    <div class="price-item-value">
+                        <span class="price-tag">${fnacPrice}</span>
+                        <svg class="chevron-right" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                    </div>
+                </a>
+                `;
+
+                // Append and animate
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = fnacHtml.trim();
+                const newLink = tempDiv.firstChild;
+                priceList.appendChild(newLink);
+
+                // Trigger reflow
+                newLink.offsetHeight;
+                newLink.style.opacity = '1';
+
+            } else {
+                // If no price list exists (no other stores found), we might need to create the container
+                // For now, simple logging, as usually at least eBay or something exists.
+                // If absolutely nothing exists, we'd need to replace the "No prices" message.
+                const container = document.querySelector('.info-message');
+                if (container && container.textContent.includes('No hay precios')) {
+                    // Replace empty message with price list
+                    const detailContainer = document.getElementById('detail-pricing');
+                    // We would ideally re-use render logic, but manual construction is safer/quicker here
+                    // to avoiding circular dependencies or complex re-renders.
+                    if (detailContainer) {
+                        // Simple reload might be easiest if we went from 0 to 1 result
+                        // detailContainer.innerHTML = renderDetailPricing({...currentPricing, local_stores: {fnac: data.fnac}});
+                    }
+                }
+            }
+        } else {
+            console.log('No FNAC price found via lazy load.');
+        }
+    } catch (error) {
+        console.warn('Failed to lazy load FNAC:', error);
+    }
 }
 
 // Update last updated text

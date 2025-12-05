@@ -6,7 +6,7 @@ from pathlib import Path as PathLib
 env_path = PathLib(__file__).parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
-from fastapi import FastAPI, HTTPException, Path
+from fastapi import FastAPI, HTTPException, Path, Query
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import sys
@@ -62,10 +62,10 @@ async def root():
     return {"service": "pricing-service", "status": "running"}
 
 
-@app.get("/ebay-price/{artist}/{album}")
+@app.get("/ebay-price")
 async def get_ebay_price(
-    artist: str = Path(..., description="Artist name"),
-    album: str = Path(..., description="Album name")
+    artist: str = Query(..., description="Artist name"),
+    album: str = Query(..., description="Album name")
 ):
     """
     Obtiene el mejor precio de eBay para un vinilo específico.
@@ -104,25 +104,32 @@ async def get_ebay_price(
         raise HTTPException(status_code=500, detail=f"Error fetching eBay price: {str(e)}")
 
 
-@app.get("/local-stores/{artist}/{album}")
+@app.get("/local-stores")
 async def get_local_stores(
-    artist: str = Path(..., description="Artist name"),
-    album: str = Path(..., description="Album name")
+    artist: str = Query(..., description="Artist name"),
+    album: str = Query(..., description="Album name"),
+    exclude_fnac: bool = Query(False, description="Exclude FNAC from scraping"),
+    only_fnac: bool = Query(False, description="Only scrape FNAC")
 ):
     """
-    Devuelve enlaces a tiendas locales de vinilos en España.
+    Devuelve enlaces a tiendas locales de vinilos en España con precios obtenidos mediante scraping.
     """
     if not pricing_client:
         raise HTTPException(status_code=500, detail="Pricing client not initialized")
     
-    log_event("pricing-service", "INFO", f"Generating local store links for {artist} - {album}")
+    log_event("pricing-service", "INFO", f"Generating local store links with prices for {artist} - {album} (exclude_fnac={exclude_fnac}, only_fnac={only_fnac})")
     
-    links = pricing_client.get_local_store_links(artist, album)
+    stores = await pricing_client.get_local_store_links_with_prices(
+        artist, 
+        album,
+        exclude_fnac=exclude_fnac,
+        only_fnac=only_fnac
+    )
     
     return {
         "artist": artist,
         "album": album,
-        "stores": links
+        "stores": stores
     }
 
 

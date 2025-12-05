@@ -548,3 +548,161 @@ tr:hover td {
         right: 1rem;
     }
 }
+
+/* New Price List Styles */
+.price-list-container {
+    margin: 2rem 0;
+}
+
+.price-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    /* Tighter gap for list feel */
+    margin-top: 1rem;
+}
+
+/* Base style for clickable row */
+.price-item-link {
+    display: flex;
+    align-items: center;
+    background: #ffffff;
+    /* White background for light theme */
+    border: 1px solid #e5e7eb;
+    /* Light grey border */
+    padding: 1rem;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    /* Very subtle shadow */
+}
+
+.price-item-link:hover {
+    background: #f9fafb;
+    /* Very light grey on hover */
+    border-color: #d1d5db;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* Logos */
+.price-item-logo {
+    width: 70px;
+    height: 40px;
+    margin-right: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    padding: 0;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.store-logo {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.store-logo-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f3f4f6;
+    color: #4b5563;
+    font-weight: 600;
+    font-size: 0.9rem;
+    border-radius: 6px;
+}
+
+.ebay-logo {
+    background: transparent;
+    border: none;
+}
+
+/* Store Name (Left) */
+.price-item-info {
+    flex: 1;
+    display: flex;
+    align-items: center;
+}
+
+.store-name {
+    font-size: 1rem;
+    font-weight: 500;
+    color: #111827;
+    /* Dark text */
+    margin: 0;
+}
+
+/* Price & Action (Right) */
+.price-item-value {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.price-tag {
+    font-size: 1.1rem;
+    color: #059669;
+    /* Emerald green for price */
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+.chevron-right {
+    opacity: 0.3;
+    transition: all 0.2s;
+    color: #9ca3af;
+    /* Light grey chevron */
+}
+
+.price-item-link:hover .chevron-right {
+    opacity: 1;
+    transform: translateX(4px);
+    color: #4b5563;
+}
+
+/* Tracklist Adjustments */
+.tracklist.no-scroll {
+    max-height: none;
+    overflow-y: visible;
+}
+
+.tracklist-section h3,
+.price-list-container h3 {
+    margin-bottom: 1.5rem;
+    color: #888;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-weight: 600;
+    border-bottom: 1px solid #333;
+    padding-bottom: 0.5rem;
+}
+
+/* Discogs Buttons styles */
+.btn-discogs-market,
+.btn-discogs-release {
+    display: block;
+    width: 100%;
+    text-align: center;
+    margin-top: 1rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #aaa;
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.btn-discogs-market:hover,
+.btn-discogs-release:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.2);
+}

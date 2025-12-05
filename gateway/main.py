@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
@@ -606,8 +606,8 @@ async def api_remove_selected_artist(user_id: int, selection_id: int):
     """Alias for removing selected artist under /api prefix."""
     return await remove_selected_artist(user_id, selection_id)
 
-@app.get("/album-pricing/{artist}/{album}")
-async def get_album_pricing(artist: str, album: str):
+@app.get("/album-pricing")
+async def get_album_pricing(artist: str = Query(..., description="Artist name"), album: str = Query(..., description="Album name")):
     """
     Get complete pricing information for an album with maximum speed optimization.
     
@@ -637,7 +637,7 @@ async def get_album_pricing(artist: str, album: str):
             
             # Query for album in database
             cur.execute("""
-                SELECT a.discogs_master_id, a.discogs_release_id
+                SELECT a.discogs_master_id, a.discogs_release_id, a.spotify_id
                 FROM albums a
                 JOIN artists ar ON a.artist_id = ar.id
                 WHERE LOWER(ar.name) = LOWER(?) AND LOWER(a.title) = LOWER(?)
@@ -648,14 +648,16 @@ async def get_album_pricing(artist: str, album: str):
         finally:
             conn.close()
         
-        # Step 2: Determine which Discogs ID to use
+        # Step 2: Determine which Discogs ID to use and get Spotify ID
         discogs_type = None
         discogs_id = None
         discogs_url = None
+        spotify_id = None
         
         if db_result:
             db_master_id = db_result["discogs_master_id"]
             db_release_id = db_result["discogs_release_id"]
+            spotify_id = db_result.get("spotify_id")
             
             # Prioritize release over master (releases are more specific)
             if db_release_id:
@@ -683,12 +685,28 @@ async def get_album_pricing(artist: str, album: str):
                 discogs_data = {"type": None, "id": None, "url": None}
         
         # Step 4: Fetch tracklist and other data in parallel
-        ebay_task = http_client.get(f"{PRICING_SERVICE_URL}/ebay-price/{artist}/{album}")
-        stores_task = http_client.get(f"{PRICING_SERVICE_URL}/local-stores/{artist}/{album}")
+        ebay_task = http_client.get(f"{PRICING_SERVICE_URL}/ebay-price", params={"artist": artist, "album": album})
+        # Exclude FNAC from initial load to avoid 30s delay
+        stores_task = http_client.get(f"{PRICING_SERVICE_URL}/local-stores", params={"artist": artist, "album": album, "exclude_fnac": True})
         
-        ebay_resp, stores_resp = await asyncio.gather(
-            ebay_task, stores_task, return_exceptions=True
-        )
+        # If no spotify_id in database, search Spotify as fallback
+        spotify_task = None
+        if not spotify_id:
+            log_event("gateway", "INFO", f"No Spotify ID in database, searching Spotify for: {artist} - {album}")
+            spotify_task = http_client.get(
+                f"{SPOTIFY_SERVICE_URL}/search/album",
+                params={"artist": artist, "album": album}
+            )
+        
+        # Gather all parallel tasks
+        tasks = [ebay_task, stores_task]
+        if spotify_task:
+            tasks.append(spotify_task)
+        
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        ebay_resp = results[0]
+        stores_resp = results[1]
+        spotify_resp = results[2] if len(results) > 2 else None
         
         # Parse eBay response
         if isinstance(ebay_resp, Exception):
@@ -703,6 +721,18 @@ async def get_album_pricing(artist: str, album: str):
             stores_data = {"stores": {}}
         else:
             stores_data = stores_resp.json()
+        
+        # Parse Spotify response (fallback search)
+        if spotify_resp and not isinstance(spotify_resp, Exception):
+            try:
+                spotify_data = spotify_resp.json()
+                spotify_id = spotify_data.get("id")
+                if spotify_id:
+                    log_event("gateway", "INFO", f"Found Spotify ID via search: {spotify_id}")
+            except Exception as e:
+                log_event("gateway", "WARNING", f"Spotify search parsing failed: {str(e)}")
+        elif spotify_resp and isinstance(spotify_resp, Exception):
+            log_event("gateway", "WARNING", f"Spotify search failed: {str(spotify_resp)}")
         
         # Step 5: Fetch tracklist based on type (release takes priority)
         tracklist_data = {"tracklist": []}
@@ -744,11 +774,15 @@ async def get_album_pricing(artist: str, album: str):
             "tracklist": tracklist_data.get("tracklist", []),
             "ebay_offer": ebay_data.get("offer"),
             "local_stores": stores_data.get("stores", {}),
+            "spotify_id": spotify_id,
+            "spotify_url": f"https://open.spotify.com/album/{spotify_id}" if spotify_id else None,
             "request_time_seconds": round(elapsed, 2),
             "debug_info": {
                 "source": "database" if db_result else "discogs_search",
                 "db_master_id": db_result["discogs_master_id"] if db_result else None,
                 "db_release_id": db_result["discogs_release_id"] if db_result else None,
+                "db_spotify_id": db_result.get("spotify_id") if db_result else None,
+                "spotify_id_source": "database" if (db_result and db_result.get("spotify_id")) else ("search" if spotify_id else "not_found"),
                 "used_type": discogs_type,
                 "used_id": discogs_id
             }
@@ -763,7 +797,33 @@ async def get_album_pricing(artist: str, album: str):
         )
 
 
-def get_vinyl_releases(releases: list) -> tuple[list, dict]:
+@app.get("/api/pricing/fnac")
+async def get_fnac_pricing(artist: str = Query(..., description="Artist name"), album: str = Query(..., description="Album name")):
+
+    """
+    Lazy load endpoint for FNAC prices.
+    Called asynchronously by frontend to avoid blocking invalid stores.
+    """
+    # DISABLED per user request
+    return {"fnac": None}
+    
+    # try:
+    #     async with httpx.AsyncClient(timeout=65.0) as client:
+    #         response = await client.get(
+    #             f"{PRICING_SERVICE_URL}/local-stores",
+    #             params={
+    #                 "artist": artist, 
+    #                 "album": album,
+    #                 "only_fnac": True
+    #             }
+    #         )
+    #         result = response.json()
+    #         # Extract only FNAC data if present
+    #         fnac_data = result.get("fnac")
+    #         return {"fnac": fnac_data}
+    # except Exception as e:
+    #     print(f"Error fetching FNAC price: {str(e)}")
+    #     return {"fnac": None}
     """Get all vinyl releases ordered by preference (originals first, then reissues)
     
     Returns:
